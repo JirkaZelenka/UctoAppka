@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+
+{% block title %}Nastavení - UctoAppka{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-tags"></i> Kategorie
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post" class="mb-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="add_category" value="1">
+                    <div class="mb-3">
+                        <label class="form-label">{{ category_form.name.label }}</label>
+                        {{ category_form.name }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ category_form.description.label }}</label>
+                        {{ category_form.description }}
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-circle"></i> Přidat kategorii
+                    </button>
+                </form>
+
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Název</th>
+                                <th>Popis</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for category in categories %}
+                            <tr>
+                                <td><strong>{{ category.name }}</strong></td>
+                                <td>{{ category.description|default:"-" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="2" class="text-center text-muted">Žádné kategorie</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-tag"></i> Subkategorie
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post" class="mb-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="add_subcategory" value="1">
+                    <div class="mb-3">
+                        <label class="form-label">{{ subcategory_form.category.label }}</label>
+                        {{ subcategory_form.category }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ subcategory_form.name.label }}</label>
+                        {{ subcategory_form.name }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ subcategory_form.description.label }}</label>
+                        {{ subcategory_form.description }}
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-circle"></i> Přidat subkategorii
+                    </button>
+                </form>
+
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Kategorie</th>
+                                <th>Název</th>
+                                <th>Popis</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for subcategory in subcategories %}
+                            <tr>
+                                <td>{{ subcategory.category.name }}</td>
+                                <td><strong>{{ subcategory.name }}</strong></td>
+                                <td>{{ subcategory.description|default:"-" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted">Žádné subkategorie</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-exclamation-triangle"></i> Anomálie a nekompatibilní položky
+                </h4>
+            </div>
+            <div class="card-body">
+                {% if anomalies %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Typ</th>
+                                    <th>Transakce</th>
+                                    <th>Kategorie</th>
+                                    <th>Částka</th>
+                                    <th>Detaily</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for anomaly in anomalies %}
+                                <tr>
+                                    <td>
+                                        {% if anomaly.type == 'high_amount' %}
+                                            <span class="badge bg-warning">Vysoká částka</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">Odlehlá hodnota</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ anomaly.transaction.description }}</td>
+                                    <td>{{ anomaly.category.name }}</td>
+                                    <td><strong>{{ anomaly.transaction.amount|floatformat:2 }} Kč</strong></td>
+                                    <td>
+                                        {% if anomaly.type == 'high_amount' %}
+                                            Průměr: {{ anomaly.avg|floatformat:2 }} Kč
+                                        {% else %}
+                                            Z-score: {{ anomaly.z_score|floatformat:2 }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle"></i> Žádné anomálie nenalezeny!
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - UctoAppka{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-speedometer2"></i> Měsíční Dashboard
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="btn-group" role="group">
+                            <a href="?period=month" class="btn btn-outline-primary {% if period == 'month' %}active{% endif %}">
+                                Kalendářní měsíc
+                            </a>
+                            <a href="?period=30days" class="btn btn-outline-primary {% if period == '30days' %}active{% endif %}">
+                                Posledních 30 dní
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <span class="badge bg-info">{{ period_label }}</span>
+                    </div>
+                </div>
+
+                <!-- Statistiky -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-label">Příjmy</div>
+                            <div class="stat-value income">{{ income|floatformat:2 }} Kč</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-label">Výdaje</div>
+                            <div class="stat-value expense">{{ expenses|floatformat:2 }} Kč</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-label">Přesuny</div>
+                            <div class="stat-value investment">{{ investments|floatformat:2 }} Kč</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-label">Čistý příjem</div>
+                            <div class="stat-value net">{{ net_income|floatformat:2 }} Kč</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filtry -->
+                <form method="get" class="mb-3">
+                    <input type="hidden" name="period" value="{{ period }}">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <select name="type" class="form-select">
+                                <option value="">Všechny typy</option>
+                                <option value="INCOME" {% if transaction_type_filter == 'INCOME' %}selected{% endif %}>Příjmy</option>
+                                <option value="EXPENSE" {% if transaction_type_filter == 'EXPENSE' %}selected{% endif %}>Výdaje</option>
+                                <option value="INVESTMENT" {% if transaction_type_filter == 'INVESTMENT' %}selected{% endif %}>Investice</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <select name="category" class="form-select">
+                                <option value="">Všechny kategorie</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat.id }}" {% if category_filter == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="submit" class="btn btn-primary w-100">Filtrovat</button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Tabulka transakcí -->
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Datum</th>
+                                <th>Popis</th>
+                                <th>Typ</th>
+                                <th>Kategorie</th>
+                                <th>Částka</th>
+                                <th>Kdo zapsal</th>
+                                <th>Zapsáno</th>
+                                <th>Za koho</th>
+                                <th>Status</th>
+                                <th>Akce</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in transactions %}
+                            <tr>
+                                <td>{{ transaction.date|date:"d.m.Y" }}</td>
+                                <td>
+                                    {{ transaction.description }}
+                                    {% if transaction.recurring_payment %}
+                                        <a href="{% url 'recurring_payments' %}" class="badge bg-info text-decoration-none ms-1" title="Trvalá platba: {{ transaction.recurring_payment.name }}">
+                                            (R)
+                                        </a>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if transaction.transaction_type == 'INCOME' %}
+                                        <span class="badge bg-success">Příjem</span>
+                                    {% elif transaction.transaction_type == 'EXPENSE' %}
+                                        <span class="badge bg-danger">Výdaj</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Investice</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ transaction.category.name|default:"-" }} {% if transaction.subcategory %}/ {{ transaction.subcategory.name }}{% endif %}</td>
+                                <td><strong>{{ transaction.amount|floatformat:2 }} Kč</strong></td>
+                                <td>{{ transaction.created_by.username|default:"-" }}</td>
+                                <td>{{ transaction.created_at|date:"d.m.Y H:i" }}</td>
+                                <td>{{ transaction.get_payment_for_display }}</td>
+                                <td>
+                                    {% if transaction.approved %}
+                                        <span class="badge badge-approved">Schváleno</span>
+                                    {% else %}
+                                        <span class="badge badge-pending">Čeká na schválení</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'edit_transaction' transaction.pk %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    {% if not transaction.approved %}
+                                        <a href="{% url 'approve_transaction' transaction.pk %}" class="btn btn-sm btn-outline-success">
+                                            <i class="bi bi-check-circle"></i>
+                                        </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="10" class="text-center text-muted">Žádné transakce nenalezeny</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

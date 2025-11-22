@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+
+{% block title %}Přidat transakci - UctoAppka{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-plus-circle"></i> Přidat novou transakci
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.amount.label }}</label>
+                            {{ form.amount }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.transaction_type.label }}</label>
+                            {{ form.transaction_type }}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.description.label }}</label>
+                        {{ form.description }}
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.category.label }}</label>
+                            {{ form.category }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.subcategory.label }}</label>
+                            {{ form.subcategory }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.date.label }}</label>
+                            {{ form.date }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.months_duration.label }}</label>
+                            {{ form.months_duration }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.payment_for.label }}</label>
+                            {{ form.payment_for }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-4">
+                                {{ form.approved }}
+                                <label class="form-check-label" for="{{ form.approved.id_for_label }}">
+                                    {{ form.approved.label }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3" id="investment-field" style="display: none;">
+                        <label class="form-label">{{ form.investment.label }}</label>
+                        {{ form.investment }}
+                        <small class="form-text text-muted">Vyberte investiční skupinu pro tuto transakci</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.note.label }}</label>
+                        {{ form.note }}
+                    </div>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const transactionType = document.getElementById('{{ form.transaction_type.id_for_label }}');
+                            const investmentField = document.getElementById('investment-field');
+                            
+                            function toggleInvestmentField() {
+                                if (transactionType.value === 'INVESTMENT') {
+                                    investmentField.style.display = 'block';
+                                } else {
+                                    investmentField.style.display = 'none';
+                                }
+                            }
+                            
+                            transactionType.addEventListener('change', toggleInvestmentField);
+                            toggleInvestmentField(); // Check on page load
+                        });
+                    </script>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Uložit transakci
+                        </button>
+                        <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Zrušit
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

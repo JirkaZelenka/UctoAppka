@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}Potvrdit vytvoření transakce - UctoAppka{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-exclamation-triangle"></i> Potvrdit vytvoření transakce
+                </h4>
+            </div>
+            <div class="card-body">
+                {% if existing_transaction %}
+                    <div class="alert alert-warning">
+                        <strong>Upozornění:</strong> Transakce pro tuto trvalou platbu a datum již existuje!
+                    </div>
+                    <p>Existující transakce:</p>
+                    <ul>
+                        <li><strong>Popis:</strong> {{ existing_transaction.description }}</li>
+                        <li><strong>Částka:</strong> {{ existing_transaction.amount|floatformat:2 }} Kč</li>
+                        <li><strong>Datum:</strong> {{ existing_transaction.date|date:"d.m.Y" }}</li>
+                        <li><strong>Kategorie:</strong> {{ existing_transaction.category.name|default:"-" }}</li>
+                    </ul>
+                    <p class="mt-3">Chcete přepsat existující transakci novými údaji z trvalé platby?</p>
+                {% else %}
+                    <p>Chcete vytvořit transakci z trvalé platby?</p>
+                {% endif %}
+                
+                <div class="card bg-light mb-3">
+                    <div class="card-body">
+                        <h5>{{ recurring_payment.name }}</h5>
+                        <ul class="mb-0">
+                            <li><strong>Částka:</strong> {{ recurring_payment.amount|floatformat:2 }} Kč</li>
+                            <li><strong>Datum:</strong> {{ recurring_payment.next_payment_date|date:"d.m.Y" }}</li>
+                            <li><strong>Kategorie:</strong> {{ recurring_payment.category.name|default:"-" }}</li>
+                            <li><strong>Za koho:</strong> {{ recurring_payment.get_payment_for_display }}</li>
+                            {% if recurring_payment.note %}
+                                <li><strong>Poznámka:</strong> {{ recurring_payment.note }}</li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    {% if existing_transaction %}
+                        <input type="hidden" name="overwrite" value="yes">
+                    {% endif %}
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> Ano, {% if existing_transaction %}přepsat{% else %}vytvořit{% endif %}
+                        </button>
+                        <a href="{% url 'recurring_payments' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle"></i> Zrušit
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block title %}Statistiky - UctoAppka{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-graph-up"></i> Dlouhodobé statistiky
+                </h4>
+            </div>
+            <div class="card-body">
+                <!-- Filtry -->
+                <form method="get" class="mb-4">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label class="form-label">Od data</label>
+                            <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Do data</label>
+                            <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Kategorie</label>
+                            <select name="category" class="form-select">
+                                <option value="">Všechny kategorie</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat.id }}" {% if category_filter == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Zobrazení</label>
+                            <select name="view" class="form-select">
+                                <option value="category" {% if view_type == 'category' %}selected{% endif %}>Podle kategorií</option>
+                                <option value="subcategory" {% if view_type == 'subcategory' %}selected{% endif %}>Podle subkategorií</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-funnel"></i> Filtrovat
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Měsíční graf -->
+                <div class="mb-4">
+                    {{ plot_monthly|safe }}
+                </div>
+
+                <!-- Koláčový graf -->
+                <div class="mb-4">
+                    {{ plot_pie|safe }}
+                </div>
+
+                <!-- Graf čistého jmění -->
+                <div class="mb-4">
+                    {{ plot_networth|safe }}
+                </div>
+
+                <!-- Celkové čisté jmění -->
+                <div class="row">
+                    <div class="col-md-6 offset-md-3">
+                        <div class="stat-card">
+                            <div class="stat-label">Celkové čisté jmění</div>
+                            <div class="stat-value {% if net_worth >= 0 %}income{% else %}expense{% endif %}">
+                                {{ net_worth|floatformat:2 }} Kč
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

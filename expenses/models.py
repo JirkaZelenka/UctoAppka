@@ -1,0 +1,186 @@
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
+from decimal import Decimal
+
+
+class Category(models.Model):
+    """Kategorie výdajů"""
+    name = models.CharField(max_length=100, verbose_name="Název kategorie")
+    description = models.TextField(blank=True, verbose_name="Popis")
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Kategorie"
+        verbose_name_plural = "Kategorie"
+        ordering = ['name']
+    
+    def __str__(self):
+        return self.name
+
+
+class Subcategory(models.Model):
+    """Subkategorie výdajů"""
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='subcategories', verbose_name="Kategorie")
+    name = models.CharField(max_length=100, verbose_name="Název subkategorie")
+    description = models.TextField(blank=True, verbose_name="Popis")
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Subkategorie"
+        verbose_name_plural = "Subkategorie"
+        ordering = ['category', 'name']
+    
+    def __str__(self):
+        return f"{self.category.name} - {self.name}"
+
+
+class TransactionType(models.TextChoices):
+    """Typ transakce"""
+    INCOME = 'INCOME', 'Příjem'
+    EXPENSE = 'EXPENSE', 'Výdaj'
+    INVESTMENT = 'INVESTMENT', 'Investice (přesun)'
+
+
+class PaymentFor(models.TextChoices):
+    """Za koho je placeno"""
+    SELF = 'SELF', 'Za sebe'
+    PARTNER = 'PARTNER', 'Za partnera'
+    SHARED = 'SHARED', 'Společný účet'
+
+
+class Transaction(models.Model):
+    """Transakce - příjem, výdaj nebo investice"""
+    amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Částka")
+    description = models.CharField(max_length=200, verbose_name="Popis")
+    transaction_type = models.CharField(
+        max_length=20,
+        choices=TransactionType.choices,
+        default=TransactionType.EXPENSE,
+        verbose_name="Typ"
+    )
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Kategorie")
+    subcategory = models.ForeignKey(Subcategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Subkategorie")
+    
+    # Pro výdaje - na kolik měsíců (pro předplatná)
+    months_duration = models.IntegerField(default=0, verbose_name="Na kolik měsíců (0 = jednorázové)")
+    
+    # Datumy
+    date = models.DateField(default=timezone.now, verbose_name="Datum")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Datum a čas zapsání")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Datum a čas editace")
+    
+    # Kdo a za koho
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='transactions_created', verbose_name="Kdo zapsal")
+    payment_for = models.CharField(
+        max_length=20,
+        choices=PaymentFor.choices,
+        default=PaymentFor.SELF,
+        verbose_name="Za koho placeno"
+    )
+    
+    # Další
+    note = models.TextField(blank=True, verbose_name="Poznámka")
+    approved = models.BooleanField(default=False, verbose_name="Schváleno")
+    
+    # Pro investice - link na investiční skupinu
+    investment = models.ForeignKey('Investment', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', verbose_name="Investiční skupina")
+    
+    # Pro trvalé platby - link na trvalou platbu
+    recurring_payment = models.ForeignKey('RecurringPayment', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', verbose_name="Trvalá platba")
+    
+    class Meta:
+        verbose_name = "Transakce"
+        verbose_name_plural = "Transakce"
+        ordering = ['-date', '-created_at']
+    
+    def __str__(self):
+        return f"{self.get_transaction_type_display()} - {self.amount} Kč - {self.description}"
+
+
+class RecurringPayment(models.Model):
+    """Trvalé platby - předplatná, nájem, atd."""
+    name = models.CharField(max_length=200, verbose_name="Název")
+    amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Částka")
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Kategorie")
+    subcategory = models.ForeignKey(Subcategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Subkategorie")
+    frequency_months = models.IntegerField(default=1, verbose_name="Frekvence (měsíce)")
+    next_payment_date = models.DateField(verbose_name="Datum další platby")
+    payment_for = models.CharField(
+        max_length=20,
+        choices=PaymentFor.choices,
+        default=PaymentFor.SHARED,
+        verbose_name="Za koho placeno"
+    )
+    active = models.BooleanField(default=True, verbose_name="Aktivní")
+    note = models.TextField(blank=True, verbose_name="Poznámka")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Trvalá platba"
+        verbose_name_plural = "Trvalé platby"
+        ordering = ['next_payment_date']
+    
+    def __str__(self):
+        return f"{self.name} - {self.amount} Kč každých {self.frequency_months} měsíců"
+
+
+class Investment(models.Model):
+    """Investiční skupina/typ - pouze název skupiny, transakce se přidávají na stránce transakcí"""
+    name = models.CharField(max_length=200, verbose_name="Název investiční skupiny")
+    observed_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Pozorovaná hodnota")
+    observed_value_date = models.DateField(null=True, blank=True, verbose_name="Datum pozorované hodnoty")
+    note = models.TextField(blank=True, verbose_name="Poznámka")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Investiční skupina"
+        verbose_name_plural = "Investiční skupiny"
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return self.name
+    
+    @property
+    def invested_amount(self):
+        """Součet všech transakcí spojených s touto investicí"""
+        from django.db.models import Sum
+        total = self.transactions.filter(transaction_type=TransactionType.INVESTMENT).aggregate(
+            total=Sum('amount')
+        )['total']
+        return total or Decimal('0')
+    
+    @property
+    def profit_loss(self):
+        """Zisk/ztráta"""
+        if self.observed_value:
+            return self.observed_value - self.invested_amount
+        return None
+    
+    @property
+    def profit_loss_percent(self):
+        """Zisk/ztráta v procentech"""
+        invested = self.invested_amount
+        if self.observed_value and invested:
+            return ((self.observed_value - invested) / invested) * 100
+        return None
+
+
+class BudgetLimit(models.Model):
+    """Limity a varování pro kategorie"""
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='budget_limits', verbose_name="Kategorie")
+    monthly_limit = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Měsíční limit")
+    warning_threshold = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Varování při překročení")
+    active = models.BooleanField(default=True, verbose_name="Aktivní")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Budget limit"
+        verbose_name_plural = "Budget limity"
+    
+    def __str__(self):
+        return f"{self.category.name} - limit {self.monthly_limit} Kč"
+
