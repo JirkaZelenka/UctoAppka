@@ -102,6 +102,12 @@ class RecurringPayment(models.Model):
     """Trvalé platby - předplatná, nájem, atd."""
     name = models.CharField(max_length=200, verbose_name="Název")
     amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Částka")
+    transaction_type = models.CharField(
+        max_length=20,
+        choices=TransactionType.choices,
+        default=TransactionType.EXPENSE,
+        verbose_name="Typ"
+    )
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Kategorie")
     subcategory = models.ForeignKey(Subcategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Subkategorie")
     frequency_months = models.IntegerField(default=1, verbose_name="Frekvence (měsíce)")

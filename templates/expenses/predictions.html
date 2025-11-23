@@ -3,19 +3,29 @@
 {% block title %}Predikce - UctoAppka{% endblock %}
 
 {% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <h3 class="mb-0">
+            <i class="bi bi-calculator"></i> Predikce - {{ current_month_name }} {{ current_year }}
+        </h3>
+        <p class="text-muted">Porovnání očekávaných a skutečných hodnot pro aktuální měsíc</p>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header">
+            <div class="card-header bg-primary text-white">
                 <h4 class="mb-0">
-                    <i class="bi bi-calculator"></i> Očekávané hodnoty
+                    <i class="bi bi-calendar-check"></i> Očekávané hodnoty
                 </h4>
+                <small>Založeno na trvalých platbách</small>
             </div>
             <div class="card-body">
                 <div class="row mb-3">
                     <div class="col-12">
                         <div class="stat-card">
-                            <div class="stat-label">Očekávaný příjem (průměr)</div>
+                            <div class="stat-label">Očekávané příjmy</div>
                             <div class="stat-value income">{{ expected_income|floatformat:2 }} Kč</div>
                         </div>
                     </div>
@@ -23,24 +33,18 @@
                 <div class="row mb-3">
                     <div class="col-12">
                         <div class="stat-card">
-                            <div class="stat-label">Očekávané výdaje (průměr)</div>
-                            <div class="stat-value expense">{{ avg_expenses|floatformat:2 }} Kč</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row mb-3">
-                    <div class="col-12">
-                        <div class="stat-card">
-                            <div class="stat-label">Očekávané trvalé platby</div>
-                            <div class="stat-value expense">{{ expected_recurring|floatformat:2 }} Kč</div>
+                            <div class="stat-label">Očekávané výdaje</div>
+                            <div class="stat-value expense">{{ expected_expenses|floatformat:2 }} Kč</div>
                         </div>
                     </div>
                 </div>
                 <div class="row">
                     <div class="col-12">
                         <div class="stat-card">
-                            <div class="stat-label">Celkové očekávané výdaje</div>
-                            <div class="stat-value expense">{{ expected_expenses|floatformat:2 }} Kč</div>
+                            <div class="stat-label">Očekávaný čistý příjem</div>
+                            <div class="stat-value {% if expected_net >= 0 %}income{% else %}expense{% endif %}">
+                                {{ expected_net|floatformat:2 }} Kč
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -50,41 +54,51 @@
 
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header">
+            <div class="card-header bg-success text-white">
                 <h4 class="mb-0">
-                    <i class="bi bi-exclamation-triangle"></i> Varování a limity
+                    <i class="bi bi-check-circle"></i> Skutečné hodnoty
                 </h4>
+                <small>K {{ today|date:"d.m.Y" }}</small>
             </div>
             <div class="card-body">
-                {% if budget_warnings %}
-                    {% for warning in budget_warnings %}
-                        <div class="alert alert-{% if warning.exceeded %}danger{% else %}warning{% endif %}">
-                            <strong>{{ warning.category.name }}</strong><br>
-                            Limit: {{ warning.limit|floatformat:2 }} Kč<br>
-                            Aktuálně: {{ warning.current|floatformat:2 }} Kč<br>
-                            {% if warning.exceeded %}
-                                <strong>Překročeno o: {{ warning.exceeded|floatformat:2 }} Kč</strong>
-                            {% else %}
-                                <strong>Varování: blíží se limitu</strong>
-                            {% endif %}
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="stat-card">
+                            <div class="stat-label">Skutečné příjmy</div>
+                            <div class="stat-value income">{{ actual_income|floatformat:2 }} Kč</div>
                         </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="alert alert-success">
-                        <i class="bi bi-check-circle"></i> Všechny limity jsou v pořádku!
                     </div>
-                {% endif %}
+                </div>
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="stat-card">
+                            <div class="stat-label">Skutečné výdaje</div>
+                            <div class="stat-value expense">{{ actual_expenses|floatformat:2 }} Kč</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                        <div class="stat-card">
+                            <div class="stat-label">Skutečný čistý příjem</div>
+                            <div class="stat-value {% if actual_net >= 0 %}income{% else %}expense{% endif %}">
+                                {{ actual_net|floatformat:2 }} Kč
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
+{% if expected_recurring_list %}
 <div class="row mt-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0">
-                    <i class="bi bi-arrow-repeat"></i> Trvalé platby (příští měsíc)
+                    <i class="bi bi-arrow-repeat"></i> Trvalé platby pro {{ current_month_name }} {{ current_year }}
                 </h4>
             </div>
             <div class="card-body">
@@ -93,24 +107,28 @@
                         <thead>
                             <tr>
                                 <th>Název</th>
+                                <th>Typ</th>
                                 <th>Částka</th>
                                 <th>Frekvence</th>
-                                <th>Další platba</th>
+                                <th>Datum platby</th>
                                 <th>Za koho</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for payment in recurring_payments %}
+                            {% for item in expected_recurring_list %}
                             <tr>
-                                <td>{{ payment.name }}</td>
-                                <td><strong>{{ payment.amount|floatformat:2 }} Kč</strong></td>
-                                <td>Každých {{ payment.frequency_months }} měsíců</td>
-                                <td>{{ payment.next_payment_date|date:"d.m.Y" }}</td>
-                                <td>{{ payment.get_payment_for_display }}</td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="5" class="text-center text-muted">Žádné trvalé platby</td>
+                                <td>{{ item.payment.name }}</td>
+                                <td>
+                                    {% if item.type == 'INCOME' %}
+                                        <span class="badge bg-success">Příjem</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Výdaj</span>
+                                    {% endif %}
+                                </td>
+                                <td><strong>{{ item.amount|floatformat:2 }} Kč</strong></td>
+                                <td>Každých {{ item.payment.frequency_months }} měsíců</td>
+                                <td>{{ item.payment.next_payment_date|date:"d.m.Y" }}</td>
+                                <td>{{ item.payment.get_payment_for_display }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -120,5 +138,6 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 

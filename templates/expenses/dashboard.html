@@ -2,6 +2,24 @@
 
 {% block title %}Dashboard - UctoAppka{% endblock %}
 
+{% block extra_css %}
+<style>
+    .table thead th a {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: color 0.2s;
+    }
+    .table thead th a:hover {
+        color: #667eea !important;
+    }
+    .table thead th {
+        cursor: pointer;
+        user-select: none;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
     <div class="col-12">
@@ -15,10 +33,10 @@
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <div class="btn-group" role="group">
-                            <a href="?period=month" class="btn btn-outline-primary {% if period == 'month' %}active{% endif %}">
+                            <a href="?period=month{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}{% if transaction_type_filter %}&type={{ transaction_type_filter }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}" class="btn btn-outline-primary {% if period == 'month' %}active{% endif %}">
                                 Kalendářní měsíc
                             </a>
-                            <a href="?period=30days" class="btn btn-outline-primary {% if period == '30days' %}active{% endif %}">
+                            <a href="?period=30days{% if sort_by %}&sort={{ sort_by }}&order={{ sort_order }}{% endif %}{% if transaction_type_filter %}&type={{ transaction_type_filter }}{% endif %}{% if category_filter %}&category={{ category_filter }}{% endif %}" class="btn btn-outline-primary {% if period == '30days' %}active{% endif %}">
                                 Posledních 30 dní
                             </a>
                         </div>
@@ -59,6 +77,8 @@
                 <!-- Filtry -->
                 <form method="get" class="mb-3">
                     <input type="hidden" name="period" value="{{ period }}">
+                    {% if sort_by %}<input type="hidden" name="sort" value="{{ sort_by }}">{% endif %}
+                    {% if sort_order %}<input type="hidden" name="order" value="{{ sort_order }}">{% endif %}
                     <div class="row">
                         <div class="col-md-4">
                             <select name="type" class="form-select">
@@ -87,15 +107,116 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>Datum</th>
-                                <th>Popis</th>
-                                <th>Typ</th>
-                                <th>Kategorie</th>
-                                <th>Částka</th>
-                                <th>Kdo zapsal</th>
-                                <th>Zapsáno</th>
-                                <th>Za koho</th>
-                                <th>Status</th>
+                                {% with current_sort=sort_by|default:'date' current_order=sort_order|default:'desc' %}
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=date&order={% if current_sort == 'date' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Datum
+                                        {% if current_sort == 'date' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=description&order={% if current_sort == 'description' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Popis
+                                        {% if current_sort == 'description' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=type&order={% if current_sort == 'type' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Typ
+                                        {% if current_sort == 'type' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=category&order={% if current_sort == 'category' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Kategorie
+                                        {% if current_sort == 'category' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=amount&order={% if current_sort == 'amount' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Částka
+                                        {% if current_sort == 'amount' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=created_by&order={% if current_sort == 'created_by' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Kdo zapsal
+                                        {% if current_sort == 'created_by' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=created_at&order={% if current_sort == 'created_at' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Zapsáno
+                                        {% if current_sort == 'created_at' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=payment_for&order={% if current_sort == 'payment_for' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Za koho
+                                        {% if current_sort == 'payment_for' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                <th>
+                                    <a href="?period={{ period }}&type={{ transaction_type_filter }}&category={{ category_filter }}&sort=approved&order={% if current_sort == 'approved' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                        Status
+                                        {% if current_sort == 'approved' %}
+                                            {% if current_order == 'asc' %}
+                                                <i class="bi bi-arrow-up"></i>
+                                            {% else %}
+                                                <i class="bi bi-arrow-down"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </a>
+                                </th>
+                                {% endwith %}
                                 <th>Akce</th>
                             </tr>
                         </thead>

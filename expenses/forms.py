@@ -103,12 +103,13 @@ class RecurringPaymentForm(forms.ModelForm):
     class Meta:
         model = RecurringPayment
         fields = [
-            'name', 'amount', 'category', 'subcategory', 'frequency_months',
+            'name', 'amount', 'transaction_type', 'category', 'subcategory', 'frequency_months',
             'next_payment_date', 'payment_for', 'active', 'note'
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'transaction_type': forms.Select(attrs={'class': 'form-control'}),
             'category': forms.Select(attrs={'class': 'form-control'}),
             'subcategory': forms.Select(attrs={'class': 'form-control'}),
             'frequency_months': forms.NumberInput(attrs={'class': 'form-control', 'min': '1'}),
@@ -120,6 +121,7 @@ class RecurringPaymentForm(forms.ModelForm):
         labels = {
             'name': 'Název',
             'amount': 'Částka (Kč)',
+            'transaction_type': 'Typ',
             'category': 'Kategorie',
             'subcategory': 'Subkategorie',
             'frequency_months': 'Frekvence (měsíce)',

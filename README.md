@@ -62,9 +62,10 @@ Settings
 
 TODO:
 - upravit aby podle typu transakce to některá pole nevyplnilo/ vyplnilo jinak
-- sorting sloupců na dashboardu
 - udělat všechny transackce exportovatelné do excelu, a naopak umět nahrát excel, zpracovat, a vyřešit konflikty
-- DONE: stránka investic
+- při editování transakce nechat defaultně původní datum
+- pro dashboard, investice a predikce všechny tiles splitnout na user 1 a user 2
+
 - časem stránka hypotéky
 - pracovat s výchozím stavem = přidat tam jednotlivé účty lidí, jak investice, tak osobko+spořák jakoby (+ hypo?/nemovitost?)
 - respektive jeden úhel pohledu = Příjmy a Výdaje a Investice,

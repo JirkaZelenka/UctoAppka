@@ -39,7 +39,7 @@ def dashboard(request):
     transactions = Transaction.objects.filter(
         date__gte=start_date,
         date__lte=end_date
-    ).order_by('-date', '-created_at')
+    )
     
     # Filtry
     transaction_type_filter = request.GET.get('type', '')
@@ -50,7 +50,36 @@ def dashboard(request):
     if category_filter:
         transactions = transactions.filter(category_id=category_filter)
     
-    # Statistiky
+    # Řazení
+    sort_by = request.GET.get('sort', 'date')
+    sort_order = request.GET.get('order', 'desc')
+    
+    # Mapování názvů sloupců na pole modelu
+    sort_fields = {
+        'date': 'date',
+        'description': 'description',
+        'type': 'transaction_type',
+        'category': 'category__name',
+        'amount': 'amount',
+        'created_by': 'created_by__username',
+        'created_at': 'created_at',
+        'payment_for': 'payment_for',
+        'approved': 'approved',
+    }
+    
+    # Výchozí řazení
+    if sort_by not in sort_fields:
+        sort_by = 'date'
+    
+    order_field = sort_fields[sort_by]
+    
+    # Aplikovat řazení
+    if sort_order == 'asc':
+        transactions = transactions.order_by(order_field, '-created_at')
+    else:
+        transactions = transactions.order_by(f'-{order_field}', '-created_at')
+    
+    # Statistiky (před limitováním)
     income = transactions.filter(transaction_type=TransactionType.INCOME).aggregate(
         total=Sum('amount')
     )['total'] or Decimal('0')
@@ -82,6 +111,8 @@ def dashboard(request):
         'categories': categories,
         'transaction_type_filter': transaction_type_filter,
         'category_filter': category_filter,
+        'sort_by': sort_by,
+        'sort_order': sort_order,
     }
     
     return render(request, 'expenses/dashboard.html', context)
@@ -273,68 +304,102 @@ def statistics(request):
 
 @login_required
 def predictions(request):
-    """Predikce a očekávané výdaje"""
+    """Predikce a očekávané výdaje - aktuální měsíc"""
     today = timezone.now().date()
     current_month_start = today.replace(day=1)
     
-    # Průměrné příjmy a výdaje z posledních 3 měsíců
-    three_months_ago = current_month_start - timedelta(days=90)
-    recent_transactions = Transaction.objects.filter(
-        date__gte=three_months_ago,
-        approved=True
-    )
+    # Vypočítat konec aktuálního měsíce
+    from calendar import monthrange
+    last_day = monthrange(today.year, today.month)[1]
+    current_month_end = today.replace(day=last_day)
     
-    total_income = recent_transactions.filter(transaction_type=TransactionType.INCOME).aggregate(
-        total=Sum('amount')
-    )['total'] or Decimal('0')
-    avg_income = total_income / 3  # Průměr za měsíc
-    
-    total_expenses = recent_transactions.filter(transaction_type=TransactionType.EXPENSE).aggregate(
-        total=Sum('amount')
-    )['total'] or Decimal('0')
-    avg_expenses = total_expenses / 3  # Průměr za měsíc
-    
-    # Očekávané výdaje z trvalých plateb
+    # Očekávané hodnoty z trvalých plateb pro aktuální měsíc
     recurring_payments = RecurringPayment.objects.filter(active=True)
-    expected_recurring = sum([rp.amount for rp in recurring_payments if rp.next_payment_date <= current_month_start + timedelta(days=30)])
+    expected_income = Decimal('0')
+    expected_expenses = Decimal('0')
+    expected_recurring_list = []
     
-    # Celkové očekávané výdaje
-    expected_expenses = avg_expenses + expected_recurring
-    
-    # Kontrola limitů
-    budget_warnings = []
-    for limit in BudgetLimit.objects.filter(active=True):
-        month_expenses = Transaction.objects.filter(
-            category=limit.category,
-            transaction_type=TransactionType.EXPENSE,
-            date__gte=current_month_start,
-            date__lte=today,
-            approved=True
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    for rp in recurring_payments:
+        # Použít typ transakce přímo z trvalé platby
+        transaction_type = rp.transaction_type
         
-        if month_expenses > limit.monthly_limit:
-            budget_warnings.append({
-                'category': limit.category,
-                'limit': limit.monthly_limit,
-                'current': month_expenses,
-                'exceeded': month_expenses - limit.monthly_limit
+        # Zkontrolovat, zda by tato trvalá platba měla proběhnout v aktuálním měsíci
+        # Zkontrolovat, zda next_payment_date je v aktuálním měsíci
+        # NEBO zda už proběhla v aktuálním měsíci (existuje transakce s datem v aktuálním měsíci)
+        payment_date = rp.next_payment_date
+        should_occur_this_month = current_month_start <= payment_date <= current_month_end
+        
+        # Pokud next_payment_date není v aktuálním měsíci, zkontrolovat, zda už proběhla
+        if not should_occur_this_month:
+            # Zkontrolovat, zda existuje transakce pro tuto trvalou platbu v aktuálním měsíci
+            has_transaction_this_month = Transaction.objects.filter(
+                recurring_payment=rp,
+                date__gte=current_month_start,
+                date__lte=current_month_end
+            ).exists()
+            
+            # Nebo zkontrolovat podle detailů (kategorie, subkategorie, částka, typ)
+            if not has_transaction_this_month and rp.category:
+                has_transaction_this_month = Transaction.objects.filter(
+                    category=rp.category,
+                    subcategory=rp.subcategory,
+                    amount=rp.amount,
+                    transaction_type=rp.transaction_type,
+                    date__gte=current_month_start,
+                    date__lte=current_month_end
+                ).exists()
+            
+            should_occur_this_month = has_transaction_this_month
+        
+        if should_occur_this_month:
+            if transaction_type == TransactionType.INCOME:
+                expected_income += rp.amount
+            elif transaction_type == TransactionType.EXPENSE:
+                expected_expenses += rp.amount
+            
+            expected_recurring_list.append({
+                'payment': rp,
+                'type': transaction_type,
+                'amount': rp.amount
             })
-        elif limit.warning_threshold and month_expenses > limit.warning_threshold:
-            budget_warnings.append({
-                'category': limit.category,
-                'limit': limit.monthly_limit,
-                'current': month_expenses,
-                'exceeded': None,
-                'warning': True
-            })
+    
+    # Skutečné hodnoty pro aktuální měsíc (doposud) - bez filtru approved, stejně jako dashboard
+    actual_income = Transaction.objects.filter(
+        transaction_type=TransactionType.INCOME,
+        date__gte=current_month_start,
+        date__lte=today
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    actual_expenses = Transaction.objects.filter(
+        transaction_type=TransactionType.EXPENSE,
+        date__gte=current_month_start,
+        date__lte=today
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    # Čistý příjem
+    expected_net = expected_income - expected_expenses
+    actual_net = actual_income - actual_expenses
+    
+    # Název aktuálního měsíce
+    month_names = {
+        1: 'Leden', 2: 'Únor', 3: 'Březen', 4: 'Duben',
+        5: 'Květen', 6: 'Červen', 7: 'Červenec', 8: 'Srpen',
+        9: 'Září', 10: 'Říjen', 11: 'Listopad', 12: 'Prosinec'
+    }
+    current_month_name = month_names.get(today.month, '')
     
     context = {
-        'expected_income': avg_income,
+        'expected_income': expected_income,
         'expected_expenses': expected_expenses,
-        'avg_expenses': avg_expenses,
-        'expected_recurring': expected_recurring,
-        'recurring_payments': recurring_payments,
-        'budget_warnings': budget_warnings,
+        'expected_net': expected_net,
+        'actual_income': actual_income,
+        'actual_expenses': actual_expenses,
+        'actual_net': actual_net,
+        'expected_recurring_list': expected_recurring_list,
+        'current_month_name': current_month_name,
+        'current_year': today.year,
+        'today': today,
+        'current_month_end': current_month_end,
     }
     
     return render(request, 'expenses/predictions.html', context)
@@ -361,13 +426,13 @@ def recurring_payments(request):
             recurring_payment=payment
         ).order_by('-date')
         
-        # 2. Transakce, které odpovídají podle detailů (kategorie, subkategorie, částka)
+        # 2. Transakce, které odpovídají podle detailů (kategorie, subkategorie, částka, typ)
         # ale nejsou propojené přes recurring_payment (pro případ, že byly vytvořeny ručně)
         matching_transactions = Transaction.objects.filter(
             category=payment.category,
             subcategory=payment.subcategory,
             amount=payment.amount,
-            transaction_type=TransactionType.EXPENSE
+            transaction_type=payment.transaction_type
         ).filter(
             Q(recurring_payment__isnull=True) | Q(recurring_payment=payment)
         ).exclude(
@@ -389,7 +454,7 @@ def recurring_payments(request):
             Q(recurring_payment=payment, date=payment.next_payment_date) |
             Q(category=payment.category, subcategory=payment.subcategory, 
               amount=payment.amount, date=payment.next_payment_date,
-              transaction_type=TransactionType.EXPENSE)
+              transaction_type=payment.transaction_type)
         ).exists()
         
         is_upcoming = payment.next_payment_date <= next_30_days and payment.next_payment_date >= today
@@ -454,7 +519,7 @@ def create_transaction_from_recurring(request, pk):
         subcategory=recurring_payment.subcategory,
         amount=recurring_payment.amount,
         date=recurring_payment.next_payment_date,
-        transaction_type=TransactionType.EXPENSE
+        transaction_type=recurring_payment.transaction_type
     ).first()
     
     # Použít první nalezenou transakci
@@ -472,6 +537,7 @@ def create_transaction_from_recurring(request, pk):
                 # Aktualizovat existující transakci
                 existing_transaction.amount = recurring_payment.amount
                 existing_transaction.description = recurring_payment.name
+                existing_transaction.transaction_type = recurring_payment.transaction_type
                 existing_transaction.category = recurring_payment.category
                 existing_transaction.subcategory = recurring_payment.subcategory
                 existing_transaction.payment_for = recurring_payment.payment_for
@@ -488,7 +554,7 @@ def create_transaction_from_recurring(request, pk):
                 subcategory=recurring_payment.subcategory,
                 amount=recurring_payment.amount,
                 date=recurring_payment.next_payment_date,
-                transaction_type=TransactionType.EXPENSE
+                transaction_type=recurring_payment.transaction_type
             ).exists()
             
             if duplicate_check:
@@ -499,7 +565,7 @@ def create_transaction_from_recurring(request, pk):
             transaction = Transaction.objects.create(
                 amount=recurring_payment.amount,
                 description=recurring_payment.name,
-                transaction_type=TransactionType.EXPENSE,
+                transaction_type=recurring_payment.transaction_type,
                 category=recurring_payment.category,
                 subcategory=recurring_payment.subcategory,
                 date=recurring_payment.next_payment_date,

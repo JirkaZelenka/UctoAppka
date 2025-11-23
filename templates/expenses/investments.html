@@ -91,6 +91,13 @@
                                     {% endif %}
                                 </td>
                                 <td>
+                                    {% if investment.observed_value_date %}
+                                        {{ investment.observed_value_date|date:"d.m.Y" }}
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
                                     {% if investment.profit_loss is not None %}
                                         <span class="{% if investment.profit_loss >= 0 %}text-success{% else %}text-danger{% endif %}">
                                             {{ investment.profit_loss|floatformat:2 }} Kč
@@ -104,13 +111,6 @@
                                         <span class="{% if investment.profit_loss_percent >= 0 %}text-success{% else %}text-danger{% endif %}">
                                             {{ investment.profit_loss_percent|floatformat:2 }}%
                                         </span>
-                                    {% else %}
-                                        <span class="text-muted">-</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if investment.observed_value_date %}
-                                        {{ investment.observed_value_date|date:"d.m.Y" }}
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}
