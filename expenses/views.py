@@ -18,6 +18,29 @@ from .models import (
 from .forms import TransactionForm, CategoryForm, SubcategoryForm, InvestmentForm, InvestmentValueForm, RecurringPaymentForm
 
 
+def calculate_split_amounts(transactions):
+    """Calculate amounts split between user 1 (SELF) and user 2 (PARTNER).
+    SHARED transactions are split 50/50.
+    Returns: (user1_amount, user2_amount)
+    """
+    user1_total = Decimal('0')
+    user2_total = Decimal('0')
+    
+    for transaction in transactions:
+        amount = transaction.amount
+        if transaction.payment_for == PaymentFor.SELF:
+            user1_total += amount
+        elif transaction.payment_for == PaymentFor.PARTNER:
+            user2_total += amount
+        elif transaction.payment_for == PaymentFor.SHARED:
+            # Split 50/50
+            half = amount / 2
+            user1_total += half
+            user2_total += half
+    
+    return user1_total, user2_total
+
+
 @login_required
 def dashboard(request):
     """Měsíční dashboard"""
@@ -80,20 +103,31 @@ def dashboard(request):
         transactions = transactions.order_by(f'-{order_field}', '-created_at')
     
     # Statistiky (před limitováním)
-    income = transactions.filter(transaction_type=TransactionType.INCOME).aggregate(
+    income_transactions = transactions.filter(transaction_type=TransactionType.INCOME)
+    expense_transactions = transactions.filter(transaction_type=TransactionType.EXPENSE)
+    investment_transactions = transactions.filter(transaction_type=TransactionType.INVESTMENT)
+    
+    income = income_transactions.aggregate(
         total=Sum('amount')
     )['total'] or Decimal('0')
     
-    expenses = transactions.filter(transaction_type=TransactionType.EXPENSE).aggregate(
+    expenses = expense_transactions.aggregate(
         total=Sum('amount')
     )['total'] or Decimal('0')
     
     # Přesuny (investice) - součet transakcí typu INVESTMENT
-    investments = transactions.filter(transaction_type=TransactionType.INVESTMENT).aggregate(
+    investments = investment_transactions.aggregate(
         total=Sum('amount')
     )['total'] or Decimal('0')
     
     net_income = income - expenses
+    
+    # Calculate split amounts
+    income_user1, income_user2 = calculate_split_amounts(income_transactions)
+    expenses_user1, expenses_user2 = calculate_split_amounts(expense_transactions)
+    investments_user1, investments_user2 = calculate_split_amounts(investment_transactions)
+    net_income_user1 = income_user1 - expenses_user1
+    net_income_user2 = income_user2 - expenses_user2
     
     # Poslední transakce (limit 20)
     recent_transactions = transactions[:20]
@@ -106,6 +140,14 @@ def dashboard(request):
         'expenses': expenses,
         'investments': investments,
         'net_income': net_income,
+        'income_user1': income_user1,
+        'income_user2': income_user2,
+        'expenses_user1': expenses_user1,
+        'expenses_user2': expenses_user2,
+        'investments_user1': investments_user1,
+        'investments_user2': investments_user2,
+        'net_income_user1': net_income_user1,
+        'net_income_user2': net_income_user2,
         'period': period,
         'period_label': period_label,
         'categories': categories,
@@ -317,6 +359,10 @@ def predictions(request):
     recurring_payments = RecurringPayment.objects.filter(active=True)
     expected_income = Decimal('0')
     expected_expenses = Decimal('0')
+    expected_income_user1 = Decimal('0')
+    expected_income_user2 = Decimal('0')
+    expected_expenses_user1 = Decimal('0')
+    expected_expenses_user2 = Decimal('0')
     expected_recurring_list = []
     
     for rp in recurring_payments:
@@ -352,10 +398,27 @@ def predictions(request):
             should_occur_this_month = has_transaction_this_month
         
         if should_occur_this_month:
+            amount = rp.amount
             if transaction_type == TransactionType.INCOME:
-                expected_income += rp.amount
+                expected_income += amount
+                # Split based on payment_for
+                if rp.payment_for == PaymentFor.SELF:
+                    expected_income_user1 += amount
+                elif rp.payment_for == PaymentFor.PARTNER:
+                    expected_income_user2 += amount
+                elif rp.payment_for == PaymentFor.SHARED:
+                    expected_income_user1 += amount / 2
+                    expected_income_user2 += amount / 2
             elif transaction_type == TransactionType.EXPENSE:
-                expected_expenses += rp.amount
+                expected_expenses += amount
+                # Split based on payment_for
+                if rp.payment_for == PaymentFor.SELF:
+                    expected_expenses_user1 += amount
+                elif rp.payment_for == PaymentFor.PARTNER:
+                    expected_expenses_user2 += amount
+                elif rp.payment_for == PaymentFor.SHARED:
+                    expected_expenses_user1 += amount / 2
+                    expected_expenses_user2 += amount / 2
             
             expected_recurring_list.append({
                 'payment': rp,
@@ -364,21 +427,31 @@ def predictions(request):
             })
     
     # Skutečné hodnoty pro aktuální měsíc (doposud) - bez filtru approved, stejně jako dashboard
-    actual_income = Transaction.objects.filter(
+    actual_income_transactions = Transaction.objects.filter(
         transaction_type=TransactionType.INCOME,
         date__gte=current_month_start,
         date__lte=today
-    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-    
-    actual_expenses = Transaction.objects.filter(
+    )
+    actual_expense_transactions = Transaction.objects.filter(
         transaction_type=TransactionType.EXPENSE,
         date__gte=current_month_start,
         date__lte=today
-    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    )
+    
+    actual_income = actual_income_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    actual_expenses = actual_expense_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    # Calculate split amounts for actual values
+    actual_income_user1, actual_income_user2 = calculate_split_amounts(actual_income_transactions)
+    actual_expenses_user1, actual_expenses_user2 = calculate_split_amounts(actual_expense_transactions)
     
     # Čistý příjem
     expected_net = expected_income - expected_expenses
     actual_net = actual_income - actual_expenses
+    expected_net_user1 = expected_income_user1 - expected_expenses_user1
+    expected_net_user2 = expected_income_user2 - expected_expenses_user2
+    actual_net_user1 = actual_income_user1 - actual_expenses_user1
+    actual_net_user2 = actual_income_user2 - actual_expenses_user2
     
     # Název aktuálního měsíce
     month_names = {
@@ -392,9 +465,21 @@ def predictions(request):
         'expected_income': expected_income,
         'expected_expenses': expected_expenses,
         'expected_net': expected_net,
+        'expected_income_user1': expected_income_user1,
+        'expected_income_user2': expected_income_user2,
+        'expected_expenses_user1': expected_expenses_user1,
+        'expected_expenses_user2': expected_expenses_user2,
+        'expected_net_user1': expected_net_user1,
+        'expected_net_user2': expected_net_user2,
         'actual_income': actual_income,
         'actual_expenses': actual_expenses,
         'actual_net': actual_net,
+        'actual_income_user1': actual_income_user1,
+        'actual_income_user2': actual_income_user2,
+        'actual_expenses_user1': actual_expenses_user1,
+        'actual_expenses_user2': actual_expenses_user2,
+        'actual_net_user1': actual_net_user1,
+        'actual_net_user2': actual_net_user2,
         'expected_recurring_list': expected_recurring_list,
         'current_month_name': current_month_name,
         'current_year': today.year,
@@ -626,6 +711,25 @@ def investments(request):
     total_current = sum([inv.observed_value or Decimal('0') for inv in investments_list])
     total_profit_loss = total_current - total_invested
     
+    # Get all investment transactions to calculate split
+    investment_transactions = Transaction.objects.filter(
+        transaction_type=TransactionType.INVESTMENT
+    )
+    total_invested_user1, total_invested_user2 = calculate_split_amounts(investment_transactions)
+    
+    # Split total_current and total_profit_loss proportionally based on invested amounts
+    if total_invested > 0:
+        user1_ratio = total_invested_user1 / total_invested
+        user2_ratio = total_invested_user2 / total_invested
+    else:
+        user1_ratio = Decimal('0.5')
+        user2_ratio = Decimal('0.5')
+    
+    total_current_user1 = total_current * user1_ratio
+    total_current_user2 = total_current * user2_ratio
+    total_profit_loss_user1 = total_profit_loss * user1_ratio
+    total_profit_loss_user2 = total_profit_loss * user2_ratio
+    
     if request.method == 'POST':
         if 'add_investment' in request.POST:
             form = InvestmentForm(request.POST)
@@ -644,6 +748,12 @@ def investments(request):
         'total_invested': total_invested,
         'total_current': total_current,
         'total_profit_loss': total_profit_loss,
+        'total_invested_user1': total_invested_user1,
+        'total_invested_user2': total_invested_user2,
+        'total_current_user1': total_current_user1,
+        'total_current_user2': total_current_user2,
+        'total_profit_loss_user1': total_profit_loss_user1,
+        'total_profit_loss_user2': total_profit_loss_user2,
     }
     
     return render(request, 'expenses/investments.html', context)

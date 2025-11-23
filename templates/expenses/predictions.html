@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Predikce - UctoAppka{% endblock %}
 
@@ -26,7 +27,11 @@
                     <div class="col-12">
                         <div class="stat-card">
                             <div class="stat-label">Očekávané příjmy</div>
-                            <div class="stat-value income">{{ expected_income|floatformat:2 }} Kč</div>
+                            <div class="stat-value income">{{ expected_income|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ expected_income_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ expected_income_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -34,7 +39,11 @@
                     <div class="col-12">
                         <div class="stat-card">
                             <div class="stat-label">Očekávané výdaje</div>
-                            <div class="stat-value expense">{{ expected_expenses|floatformat:2 }} Kč</div>
+                            <div class="stat-value expense">{{ expected_expenses|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ expected_expenses_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ expected_expenses_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -43,7 +52,11 @@
                         <div class="stat-card">
                             <div class="stat-label">Očekávaný čistý příjem</div>
                             <div class="stat-value {% if expected_net >= 0 %}income{% else %}expense{% endif %}">
-                                {{ expected_net|floatformat:2 }} Kč
+                                {{ expected_net|czech_int }} Kč
+                            </div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ expected_net_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ expected_net_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>
@@ -65,7 +78,11 @@
                     <div class="col-12">
                         <div class="stat-card">
                             <div class="stat-label">Skutečné příjmy</div>
-                            <div class="stat-value income">{{ actual_income|floatformat:2 }} Kč</div>
+                            <div class="stat-value income">{{ actual_income|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ actual_income_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ actual_income_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -73,7 +90,11 @@
                     <div class="col-12">
                         <div class="stat-card">
                             <div class="stat-label">Skutečné výdaje</div>
-                            <div class="stat-value expense">{{ actual_expenses|floatformat:2 }} Kč</div>
+                            <div class="stat-value expense">{{ actual_expenses|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ actual_expenses_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ actual_expenses_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -82,7 +103,11 @@
                         <div class="stat-card">
                             <div class="stat-label">Skutečný čistý příjem</div>
                             <div class="stat-value {% if actual_net >= 0 %}income{% else %}expense{% endif %}">
-                                {{ actual_net|floatformat:2 }} Kč
+                                {{ actual_net|czech_int }} Kč
+                            </div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ actual_net_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ actual_net_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>
@@ -125,7 +150,7 @@
                                         <span class="badge bg-danger">Výdaj</span>
                                     {% endif %}
                                 </td>
-                                <td><strong>{{ item.amount|floatformat:2 }} Kč</strong></td>
+                                <td><strong>{{ item.amount|czech_int }} Kč</strong></td>
                                 <td>Každých {{ item.payment.frequency_months }} měsíců</td>
                                 <td>{{ item.payment.next_payment_date|date:"d.m.Y" }}</td>
                                 <td>{{ item.payment.get_payment_for_display }}</td>

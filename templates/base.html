@@ -68,6 +68,56 @@
             color: #6c757d;
             font-size: 0.9rem;
         }
+        .stat-split {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .stat-split-left, .stat-split-right {
+            flex: 1;
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #495057;
+            cursor: help;
+            position: relative;
+            padding: 5px;
+        }
+        .stat-split-left {
+            border-right: 1px solid #e9ecef;
+        }
+        .stat-split-left:hover::after,
+        .stat-split-right:hover::after {
+            content: attr(data-label);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            z-index: 1000;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .stat-split-left:hover::before,
+        .stat-split-right:hover::before {
+            content: '';
+            position: absolute;
+            bottom: calc(100% + 2px);
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            pointer-events: none;
+        }
         .income { color: #28a745; }
         .expense { color: #dc3545; }
         .investment { color: #ffc107; }

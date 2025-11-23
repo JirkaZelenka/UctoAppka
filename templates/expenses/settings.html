@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Nastavení - UctoAppka{% endblock %}
 
@@ -144,10 +145,10 @@
                                     </td>
                                     <td>{{ anomaly.transaction.description }}</td>
                                     <td>{{ anomaly.category.name }}</td>
-                                    <td><strong>{{ anomaly.transaction.amount|floatformat:2 }} Kč</strong></td>
+                                    <td><strong>{{ anomaly.transaction.amount|czech_int }} Kč</strong></td>
                                     <td>
                                         {% if anomaly.type == 'high_amount' %}
-                                            Průměr: {{ anomaly.avg|floatformat:2 }} Kč
+                                            Průměr: {{ anomaly.avg|czech_int }} Kč
                                         {% else %}
                                             Z-score: {{ anomaly.z_score|floatformat:2 }}
                                         {% endif %}

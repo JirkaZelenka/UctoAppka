@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Investice - UctoAppka{% endblock %}
 
@@ -7,14 +8,22 @@
     <div class="col-md-4">
         <div class="stat-card">
             <div class="stat-label">Celkem investováno</div>
-            <div class="stat-value investment">{{ total_invested|floatformat:2 }} Kč</div>
+            <div class="stat-value investment">{{ total_invested|czech_int }} Kč</div>
+            <div class="stat-split">
+                <div class="stat-split-left" data-label="Uživatel 1">{{ total_invested_user1|czech_int }} Kč</div>
+                <div class="stat-split-right" data-label="Uživatel 2">{{ total_invested_user2|czech_int }} Kč</div>
+            </div>
         </div>
     </div>
     <div class="col-md-4">
             <div class="stat-card">
                 <div class="stat-label">Pozorovaná hodnota</div>
                 <div class="stat-value {% if total_current >= total_invested %}income{% else %}expense{% endif %}">
-                    {{ total_current|floatformat:2 }} Kč
+                    {{ total_current|czech_int }} Kč
+                </div>
+                <div class="stat-split">
+                    <div class="stat-split-left" data-label="Uživatel 1">{{ total_current_user1|czech_int }} Kč</div>
+                    <div class="stat-split-right" data-label="Uživatel 2">{{ total_current_user2|czech_int }} Kč</div>
                 </div>
             </div>
     </div>
@@ -22,7 +31,11 @@
         <div class="stat-card">
             <div class="stat-label">Zisk/Ztráta</div>
             <div class="stat-value {% if total_profit_loss >= 0 %}income{% else %}expense{% endif %}">
-                {{ total_profit_loss|floatformat:2 }} Kč
+                {{ total_profit_loss|czech_int }} Kč
+            </div>
+            <div class="stat-split">
+                <div class="stat-split-left" data-label="Uživatel 1">{{ total_profit_loss_user1|czech_int }} Kč</div>
+                <div class="stat-split-right" data-label="Uživatel 2">{{ total_profit_loss_user2|czech_int }} Kč</div>
             </div>
         </div>
     </div>
@@ -82,10 +95,10 @@
                             {% for investment in investments %}
                             <tr>
                                 <td><strong>{{ investment.name }}</strong></td>
-                                <td><strong>{{ investment.invested_amount|floatformat:2 }} Kč</strong></td>
+                                <td><strong>{{ investment.invested_amount|czech_int }} Kč</strong></td>
                                 <td>
                                     {% if investment.observed_value %}
-                                        {{ investment.observed_value|floatformat:2 }} Kč
+                                        {{ investment.observed_value|czech_int }} Kč
                                     {% else %}
                                         <span class="text-muted">Neuvedeno</span>
                                     {% endif %}
@@ -100,7 +113,7 @@
                                 <td>
                                     {% if investment.profit_loss is not None %}
                                         <span class="{% if investment.profit_loss >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                            {{ investment.profit_loss|floatformat:2 }} Kč
+                                            {{ investment.profit_loss|czech_int }} Kč
                                         </span>
                                     {% else %}
                                         <span class="text-muted">-</span>

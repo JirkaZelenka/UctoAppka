@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Trvalé platby - UctoAppka{% endblock %}
 
@@ -112,7 +113,7 @@
                                                 <span class="badge bg-danger">Výdaj</span>
                                             {% endif %}
                                         </td>
-                                        <td><strong>{{ item.payment.amount|floatformat:2 }} Kč</strong></td>
+                                        <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
                                         <td>Každých {{ item.payment.frequency_months }} měsíců</td>
                                         <td>{{ item.payment.next_payment_date|date:"d.m.Y" }}</td>
                                         <td>{{ item.payment.get_payment_for_display }}</td>
@@ -155,7 +156,7 @@
                                                 <span class="badge bg-danger">Výdaj</span>
                                             {% endif %}
                                         </td>
-                                        <td><strong>{{ item.payment.amount|floatformat:2 }} Kč</strong></td>
+                                        <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
                                         <td>Každých {{ item.payment.frequency_months }} měsíců</td>
                                         <td>
                                             {% if item.transaction_date %}
@@ -205,7 +206,7 @@
                                                 <span class="badge bg-danger">Výdaj</span>
                                             {% endif %}
                                         </td>
-                                        <td><strong>{{ item.payment.amount|floatformat:2 }} Kč</strong></td>
+                                        <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
                                         <td>Každých {{ item.payment.frequency_months }} měsíců</td>
                                         <td>{{ item.payment.next_payment_date|date:"d.m.Y" }}</td>
                                         <td>{{ item.payment.get_payment_for_display }}</td>

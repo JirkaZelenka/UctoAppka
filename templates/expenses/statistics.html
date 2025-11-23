@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Statistiky - UctoAppka{% endblock %}
 
@@ -70,7 +71,7 @@
                         <div class="stat-card">
                             <div class="stat-label">Celkové čisté jmění</div>
                             <div class="stat-value {% if net_worth >= 0 %}income{% else %}expense{% endif %}">
-                                {{ net_worth|floatformat:2 }} Kč
+                                {{ net_worth|czech_int }} Kč
                             </div>
                         </div>
                     </div>

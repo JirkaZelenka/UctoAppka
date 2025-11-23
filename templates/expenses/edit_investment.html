@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Editovat investiční skupinu - UctoAppka{% endblock %}
 
@@ -71,14 +72,14 @@
             <div class="card-body">
                 <h5>{{ investment.name }}</h5>
                 <hr>
-                <p><strong>Investováno (součet transakcí):</strong> {{ investment.invested_amount|floatformat:2 }} Kč</p>
+                <p><strong>Investováno (součet transakcí):</strong> {{ investment.invested_amount|czech_int }} Kč</p>
                 {% if investment.observed_value %}
-                    <p><strong>Pozorovaná hodnota:</strong> {{ investment.observed_value|floatformat:2 }} Kč</p>
+                    <p><strong>Pozorovaná hodnota:</strong> {{ investment.observed_value|czech_int }} Kč</p>
                     <p><strong>Datum pozorování:</strong> {{ investment.observed_value_date|date:"d.m.Y" }}</p>
                     {% if investment.profit_loss is not None %}
                         <p><strong>Zisk/Ztráta:</strong> 
                             <span class="{% if investment.profit_loss >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ investment.profit_loss|floatformat:2 }} Kč
+                                {{ investment.profit_loss|czech_int }} Kč
                                 ({{ investment.profit_loss_percent|floatformat:2 }}%)
                             </span>
                         </p>
@@ -115,7 +116,7 @@
                             <tr>
                                 <td>{{ transaction.date|date:"d.m.Y" }}</td>
                                 <td>{{ transaction.description }}</td>
-                                <td><strong>{{ transaction.amount|floatformat:2 }} Kč</strong></td>
+                                <td><strong>{{ transaction.amount|czech_int }} Kč</strong></td>
                             </tr>
                             {% endfor %}
                         </tbody>

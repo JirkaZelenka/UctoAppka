@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Dashboard - UctoAppka{% endblock %}
 
@@ -51,25 +52,41 @@
                     <div class="col-md-3">
                         <div class="stat-card">
                             <div class="stat-label">Příjmy</div>
-                            <div class="stat-value income">{{ income|floatformat:2 }} Kč</div>
+                            <div class="stat-value income">{{ income|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ income_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ income_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="stat-card">
                             <div class="stat-label">Výdaje</div>
-                            <div class="stat-value expense">{{ expenses|floatformat:2 }} Kč</div>
+                            <div class="stat-value expense">{{ expenses|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ expenses_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ expenses_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="stat-card">
                             <div class="stat-label">Přesuny</div>
-                            <div class="stat-value investment">{{ investments|floatformat:2 }} Kč</div>
+                            <div class="stat-value investment">{{ investments|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ investments_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ investments_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="stat-card">
                             <div class="stat-label">Čistý příjem</div>
-                            <div class="stat-value net">{{ net_income|floatformat:2 }} Kč</div>
+                            <div class="stat-value net">{{ net_income|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="Uživatel 1">{{ net_income_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="Uživatel 2">{{ net_income_user2|czech_int }} Kč</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -242,7 +259,7 @@
                                     {% endif %}
                                 </td>
                                 <td>{{ transaction.category.name|default:"-" }} {% if transaction.subcategory %}/ {{ transaction.subcategory.name }}{% endif %}</td>
-                                <td><strong>{{ transaction.amount|floatformat:2 }} Kč</strong></td>
+                                <td><strong>{{ transaction.amount|czech_int }} Kč</strong></td>
                                 <td>{{ transaction.created_by.username|default:"-" }}</td>
                                 <td>{{ transaction.created_at|date:"d.m.Y H:i" }}</td>
                                 <td>{{ transaction.get_payment_for_display }}</td>

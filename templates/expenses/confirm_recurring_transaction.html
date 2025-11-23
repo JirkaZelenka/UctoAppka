@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load czech_filters %}
 
 {% block title %}Potvrdit vytvoření transakce - UctoAppka{% endblock %}
 
@@ -19,7 +20,7 @@
                     <p>Existující transakce:</p>
                     <ul>
                         <li><strong>Popis:</strong> {{ existing_transaction.description }}</li>
-                        <li><strong>Částka:</strong> {{ existing_transaction.amount|floatformat:2 }} Kč</li>
+                        <li><strong>Částka:</strong> {{ existing_transaction.amount|czech_int }} Kč</li>
                         <li><strong>Datum:</strong> {{ existing_transaction.date|date:"d.m.Y" }}</li>
                         <li><strong>Kategorie:</strong> {{ existing_transaction.category.name|default:"-" }}</li>
                     </ul>
@@ -32,7 +33,7 @@
                     <div class="card-body">
                         <h5>{{ recurring_payment.name }}</h5>
                         <ul class="mb-0">
-                            <li><strong>Částka:</strong> {{ recurring_payment.amount|floatformat:2 }} Kč</li>
+                            <li><strong>Částka:</strong> {{ recurring_payment.amount|czech_int }} Kč</li>
                             <li><strong>Datum:</strong> {{ recurring_payment.next_payment_date|date:"d.m.Y" }}</li>
                             <li><strong>Kategorie:</strong> {{ recurring_payment.category.name|default:"-" }}</li>
                             <li><strong>Za koho:</strong> {{ recurring_payment.get_payment_for_display }}</li>
