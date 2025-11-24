@@ -47,20 +47,6 @@
                         </div>
                     </div>
                 </div>
-                <div class="row">
-                    <div class="col-12">
-                        <div class="stat-card">
-                            <div class="stat-label">Očekávaný čistý příjem</div>
-                            <div class="stat-value {% if expected_net >= 0 %}income{% else %}expense{% endif %}">
-                                {{ expected_net|czech_int }} Kč
-                            </div>
-                            <div class="stat-split">
-                                <div class="stat-split-left" data-label="Uživatel 1">{{ expected_net_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="Uživatel 2">{{ expected_net_user2|czech_int }} Kč</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -94,20 +80,6 @@
                             <div class="stat-split">
                                 <div class="stat-split-left" data-label="Uživatel 1">{{ actual_expenses_user1|czech_int }} Kč</div>
                                 <div class="stat-split-right" data-label="Uživatel 2">{{ actual_expenses_user2|czech_int }} Kč</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col-12">
-                        <div class="stat-card">
-                            <div class="stat-label">Skutečný čistý příjem</div>
-                            <div class="stat-value {% if actual_net >= 0 %}income{% else %}expense{% endif %}">
-                                {{ actual_net|czech_int }} Kč
-                            </div>
-                            <div class="stat-split">
-                                <div class="stat-split-left" data-label="Uživatel 1">{{ actual_net_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="Uživatel 2">{{ actual_net_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>

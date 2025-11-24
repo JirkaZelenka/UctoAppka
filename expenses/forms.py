@@ -13,7 +13,13 @@ class TransactionForm(forms.ModelForm):
             'months_duration', 'date', 'payment_for', 'note', 'approved', 'investment'
         ]
         widgets = {
-            'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'amount': forms.NumberInput(attrs={
+                'class': 'form-control', 
+                'step': '1', 
+                'min': '0',
+                'pattern': '[0-9]*',
+                'inputmode': 'numeric'
+            }),
             'description': forms.TextInput(attrs={'class': 'form-control'}),
             'transaction_type': forms.Select(attrs={'class': 'form-control'}),
             'category': forms.Select(attrs={'class': 'form-control'}),
@@ -38,6 +44,21 @@ class TransactionForm(forms.ModelForm):
             'approved': 'Schváleno',
             'investment': 'Investiční skupina (pouze pro typ Investice)',
         }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Format amount as integer when displaying
+        if self.instance and self.instance.pk and self.instance.amount:
+            self.initial['amount'] = int(round(float(self.instance.amount)))
+    
+    def clean_amount(self):
+        """Convert amount to integer (round to nearest)"""
+        amount = self.cleaned_data.get('amount')
+        if amount is not None:
+            from decimal import Decimal
+            # Round to nearest integer
+            return Decimal(int(round(float(amount))))
+        return amount
 
 
 class CategoryForm(forms.ModelForm):

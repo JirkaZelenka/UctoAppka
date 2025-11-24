@@ -189,7 +189,11 @@ def edit_transaction(request, pk):
             messages.success(request, 'Transakce byla úspěšně upravena.')
             return redirect('dashboard')
     else:
+        # Prefill form with transaction data, ensuring date is set
         form = TransactionForm(instance=transaction)
+        # Ensure date is properly formatted for the date input (YYYY-MM-DD format)
+        if transaction.date:
+            form.initial['date'] = transaction.date.strftime('%Y-%m-%d')
     
     return render(request, 'expenses/edit_transaction.html', {'form': form, 'transaction': transaction})
 
@@ -426,17 +430,56 @@ def predictions(request):
                 'amount': rp.amount
             })
     
-    # Skutečné hodnoty pro aktuální měsíc (doposud) - bez filtru approved, stejně jako dashboard
-    actual_income_transactions = Transaction.objects.filter(
-        transaction_type=TransactionType.INCOME,
-        date__gte=current_month_start,
-        date__lte=today
-    )
-    actual_expense_transactions = Transaction.objects.filter(
-        transaction_type=TransactionType.EXPENSE,
-        date__gte=current_month_start,
-        date__lte=today
-    )
+    # Skutečné hodnoty pro aktuální měsíc - pouze pro trvalé platby
+    # Najít všechny transakce, které odpovídají trvalým platbám z expected_recurring_list
+    actual_income_transaction_ids = []
+    actual_expense_transaction_ids = []
+    
+    for item in expected_recurring_list:
+        rp = item['payment']
+        transaction_type = item['type']
+        
+        # Najít transakce pro tuto trvalou platbu v aktuálním měsíci
+        # 1. Transakce přímo propojené přes recurring_payment
+        matching_transactions = Transaction.objects.filter(
+            recurring_payment=rp,
+            date__gte=current_month_start,
+            date__lte=today,
+            transaction_type=transaction_type
+        )
+        
+        # 2. Transakce, které odpovídají podle detailů (kategorie, subkategorie, částka, typ)
+        if rp.category:
+            matching_by_details = Transaction.objects.filter(
+                category=rp.category,
+                subcategory=rp.subcategory,
+                amount=rp.amount,
+                transaction_type=transaction_type,
+                date__gte=current_month_start,
+                date__lte=today
+            ).exclude(id__in=[t.id for t in matching_transactions])
+            
+            matching_transactions = list(matching_transactions) + list(matching_by_details)
+        
+        # Přidat do příslušného seznamu podle typu
+        for trans in matching_transactions:
+            if transaction_type == TransactionType.INCOME:
+                if trans.id not in actual_income_transaction_ids:
+                    actual_income_transaction_ids.append(trans.id)
+            elif transaction_type == TransactionType.EXPENSE:
+                if trans.id not in actual_expense_transaction_ids:
+                    actual_expense_transaction_ids.append(trans.id)
+    
+    # Vytvořit querysety z nalezených transakcí
+    if actual_income_transaction_ids:
+        actual_income_transactions = Transaction.objects.filter(id__in=actual_income_transaction_ids)
+    else:
+        actual_income_transactions = Transaction.objects.none()
+    
+    if actual_expense_transaction_ids:
+        actual_expense_transactions = Transaction.objects.filter(id__in=actual_expense_transaction_ids)
+    else:
+        actual_expense_transactions = Transaction.objects.none()
     
     actual_income = actual_income_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
     actual_expenses = actual_expense_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
@@ -444,14 +487,6 @@ def predictions(request):
     # Calculate split amounts for actual values
     actual_income_user1, actual_income_user2 = calculate_split_amounts(actual_income_transactions)
     actual_expenses_user1, actual_expenses_user2 = calculate_split_amounts(actual_expense_transactions)
-    
-    # Čistý příjem
-    expected_net = expected_income - expected_expenses
-    actual_net = actual_income - actual_expenses
-    expected_net_user1 = expected_income_user1 - expected_expenses_user1
-    expected_net_user2 = expected_income_user2 - expected_expenses_user2
-    actual_net_user1 = actual_income_user1 - actual_expenses_user1
-    actual_net_user2 = actual_income_user2 - actual_expenses_user2
     
     # Název aktuálního měsíce
     month_names = {
@@ -464,22 +499,16 @@ def predictions(request):
     context = {
         'expected_income': expected_income,
         'expected_expenses': expected_expenses,
-        'expected_net': expected_net,
         'expected_income_user1': expected_income_user1,
         'expected_income_user2': expected_income_user2,
         'expected_expenses_user1': expected_expenses_user1,
         'expected_expenses_user2': expected_expenses_user2,
-        'expected_net_user1': expected_net_user1,
-        'expected_net_user2': expected_net_user2,
         'actual_income': actual_income,
         'actual_expenses': actual_expenses,
-        'actual_net': actual_net,
         'actual_income_user1': actual_income_user1,
         'actual_income_user2': actual_income_user2,
         'actual_expenses_user1': actual_expenses_user1,
         'actual_expenses_user2': actual_expenses_user2,
-        'actual_net_user1': actual_net_user1,
-        'actual_net_user2': actual_net_user2,
         'expected_recurring_list': expected_recurring_list,
         'current_month_name': current_month_name,
         'current_year': today.year,
