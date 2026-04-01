@@ -1,0 +1,575 @@
+{% extends 'base.html' %}
+{% load czech_filters %}
+
+{% block title %}Upravovat transakce - UctoAppka{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table thead th a {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: color 0.2s;
+    }
+    .table thead th a:hover {
+        color: #667eea !important;
+    }
+    .table thead th {
+        cursor: pointer;
+        user-select: none;
+    }
+    .nav-tabs .nav-link {
+        color: #667eea !important;
+        border: 1px solid transparent;
+    }
+    .nav-tabs .nav-link:hover {
+        color: #5568d3 !important;
+        border-color: #e9ecef #e9ecef #dee2e6;
+    }
+    .nav-tabs .nav-link.active {
+        color: #495057 !important;
+        font-weight: bold;
+        background-color: #fff;
+        border-color: #dee2e6 #dee2e6 #fff;
+    }
+    .nav-tabs {
+        border-bottom: 1px solid #dee2e6;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-pencil-square"></i> Upravovat transakce
+                </h4>
+            </div>
+            <div class="card-body">
+                <!-- Tabs -->
+                <ul class="nav nav-tabs mb-4" id="transactionTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link active" id="add-tab" data-bs-toggle="tab" data-bs-target="#add" href="#add" role="tab" aria-controls="add" aria-selected="true">
+                            <i class="bi bi-plus-circle"></i> Přidat transakci
+                        </a>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link" id="import-export-tab" data-bs-toggle="tab" data-bs-target="#import-export" href="#import-export" role="tab" aria-controls="import-export" aria-selected="false">
+                            <i class="bi bi-upload"></i> Import/Export
+                        </a>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link" id="manage-tab" data-bs-toggle="tab" data-bs-target="#manage" href="#manage" role="tab" aria-controls="manage" aria-selected="false">
+                            <i class="bi bi-list-check"></i> Spravuj transakce
+                        </a>
+                    </li>
+                </ul>
+
+                <!-- Tab Content -->
+                <div class="tab-content" id="transactionTabsContent">
+                    <!-- Section 1: Přidat transakci -->
+                    <div class="tab-pane fade show active" id="add" role="tabpanel">
+                        <div class="row">
+                            <div class="col-md-8 offset-md-2">
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="add_transaction" value="1">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">{{ form.amount.label }}</label>
+                                            {{ form.amount }}
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">{{ form.transaction_type.label }}</label>
+                                            {{ form.transaction_type }}
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">{{ form.description.label }}</label>
+                                        {{ form.description }}
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">{{ form.category.label }}</label>
+                                            {{ form.category }}
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">{{ form.subcategory.label }}</label>
+                                            {{ form.subcategory }}
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">{{ form.date.label }}</label>
+                                            {{ form.date }}
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">{{ form.months_duration.label }}</label>
+                                            {{ form.months_duration }}
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">{{ form.payment_for.label }}</label>
+                                            {{ form.payment_for }}
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <div class="form-check mt-4">
+                                                {{ form.approved }}
+                                                <label class="form-check-label" for="{{ form.approved.id_for_label }}">
+                                                    {{ form.approved.label }}
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3" id="investment-field" style="display: none;">
+                                        <label class="form-label">{{ form.investment.label }}</label>
+                                        {{ form.investment }}
+                                        <small class="form-text text-muted">Vyberte investiční skupinu pro tuto transakci</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">{{ form.note.label }}</label>
+                                        {{ form.note }}
+                                    </div>
+                                    <script>
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            const transactionType = document.getElementById('{{ form.transaction_type.id_for_label }}');
+                                            const investmentField = document.getElementById('investment-field');
+                                            const amountField = document.getElementById('{{ form.amount.id_for_label }}');
+                                            
+                                            function toggleInvestmentField() {
+                                                if (transactionType.value === 'INVESTMENT') {
+                                                    investmentField.style.display = 'block';
+                                                } else {
+                                                    investmentField.style.display = 'none';
+                                                }
+                                            }
+                                            
+                                            // Prevent decimal input in amount field
+                                            if (amountField) {
+                                                amountField.addEventListener('input', function(e) {
+                                                    if (e.target.value.includes('.')) {
+                                                        e.target.value = e.target.value.split('.')[0];
+                                                    }
+                                                });
+                                                
+                                                amountField.addEventListener('keydown', function(e) {
+                                                    if (e.key === '.' || e.key === ',' || (e.key === '-' && e.target.selectionStart !== 0)) {
+                                                        e.preventDefault();
+                                                    }
+                                                });
+                                                
+                                                // Prevent mouse wheel from changing value
+                                                amountField.addEventListener('wheel', function(e) {
+                                                    if (document.activeElement === amountField) {
+                                                        e.preventDefault();
+                                                    }
+                                                }, { passive: false });
+                                            }
+                                            
+                                            transactionType.addEventListener('change', toggleInvestmentField);
+                                            toggleInvestmentField();
+                                        });
+                                    </script>
+                                    <div class="d-grid gap-2">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="bi bi-save"></i> Uložit transakci
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Import/Export -->
+                    <div class="tab-pane fade" id="import-export" role="tabpanel">
+                        <div class="row">
+                            <!-- Export Section -->
+                            <div class="col-md-6">
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">
+                                            <i class="bi bi-download"></i> Export transakcí
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <form method="get" action="{% url 'export_transactions' %}" id="export-form">
+                                            <div class="mb-3">
+                                                <label class="form-label">Datum od</label>
+                                                <input type="date" name="date_from" class="form-control" value="{% if date_range.min_date %}{{ date_range.min_date|date:'Y-m-d' }}{% endif %}" id="export-date-from">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Datum do</label>
+                                                <input type="date" name="date_to" class="form-control" value="{% if date_range.max_date %}{{ date_range.max_date|date:'Y-m-d' }}{% endif %}" id="export-date-to">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Formát</label>
+                                                <select name="format" class="form-select">
+                                                    <option value="csv">CSV</option>
+                                                    <option value="excel">Excel (.xlsx)</option>
+                                                </select>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary w-100">
+                                                <i class="bi bi-download"></i> Exportovat
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Import Section -->
+                            <div class="col-md-6">
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">
+                                            <i class="bi bi-upload"></i> Import transakcí
+                                        </h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <form method="post" action="{% url 'import_transactions' %}" enctype="multipart/form-data" id="import-form">
+                                            {% csrf_token %}
+                                            <div class="mb-3">
+                                                <label class="form-label">Vyberte soubor (Excel nebo CSV)</label>
+                                                <input type="file" name="file" class="form-control" accept=".xlsx,.xls,.csv" id="import-file-input" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <div id="drop-zone" class="border border-dashed border-secondary rounded p-4 text-center" style="min-height: 150px; cursor: pointer;">
+                                                    <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #6c757d;"></i>
+                                                    <p class="mt-2 mb-0">Přetáhněte soubor sem nebo klikněte pro výběr</p>
+                                                    <small class="text-muted">Podporované formáty: .xlsx, .xls, .csv</small>
+                                                </div>
+                                            </div>
+                                            <button type="submit" class="btn btn-success w-100" id="import-submit" disabled>
+                                                <i class="bi bi-upload"></i> Importovat
+                                            </button>
+                                        </form>
+                                        <div class="alert alert-info mt-3">
+                                            <small>
+                                                <strong>Formát souboru:</strong><br>
+                                                Očekávané sloupce: Datum, Popis, Typ, Kategorie, Subkategorie, Částka (Kč), Za koho, Na kolik měsíců, Schváleno, Poznámka<br>
+                                                Datum ve formátu: YYYY-MM-DD<br>
+                                                Typ: Příjem, Výdaj, nebo Investice
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Spravuj transakce -->
+                    <div class="tab-pane fade" id="manage" role="tabpanel">
+                        <!-- Filtry -->
+                        <form method="get" class="mb-3">
+                            <input type="hidden" name="tab" value="manage">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <label class="form-label">Typ transakce</label>
+                                    <select name="type" class="form-select">
+                                        <option value="">Všechny typy</option>
+                                        <option value="INCOME" {% if transaction_type_filter == 'INCOME' %}selected{% endif %}>Příjmy</option>
+                                        <option value="EXPENSE" {% if transaction_type_filter == 'EXPENSE' %}selected{% endif %}>Výdaje</option>
+                                        <option value="INVESTMENT" {% if transaction_type_filter == 'INVESTMENT' %}selected{% endif %}>Investice</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Kategorie</label>
+                                    <select name="category" class="form-select">
+                                        <option value="">Všechny kategorie</option>
+                                        {% for cat in categories %}
+                                            <option value="{{ cat.id }}" {% if category_filter == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Datum od</label>
+                                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Datum do</label>
+                                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Schválení</label>
+                                    <select name="approved" class="form-select">
+                                        <option value="">Všechny</option>
+                                        <option value="yes" {% if approved_filter == 'yes' %}selected{% endif %}>Schválené</option>
+                                        <option value="no" {% if approved_filter == 'no' %}selected{% endif %}>Neschválené</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-md-12">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-funnel"></i> Filtrovat
+                                    </button>
+                                    <a href="{% url 'manage_transactions' %}?tab=manage" class="btn btn-outline-secondary">
+                                        <i class="bi bi-x-circle"></i> Zrušit filtry
+                                    </a>
+                                </div>
+                            </div>
+                        </form>
+
+                        <!-- Tabulka transakcí -->
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        {% with current_sort=sort_by|default:'date' current_order=sort_order|default:'desc' %}
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=date&order={% if current_sort == 'date' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Datum
+                                                {% if current_sort == 'date' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=description&order={% if current_sort == 'description' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Popis
+                                                {% if current_sort == 'description' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=type&order={% if current_sort == 'type' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Typ
+                                                {% if current_sort == 'type' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=category&order={% if current_sort == 'category' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Kategorie
+                                                {% if current_sort == 'category' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=amount&order={% if current_sort == 'amount' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Částka
+                                                {% if current_sort == 'amount' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=created_by&order={% if current_sort == 'created_by' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Kdo zapsal
+                                                {% if current_sort == 'created_by' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=created_at&order={% if current_sort == 'created_at' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Zapsáno
+                                                {% if current_sort == 'created_at' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=payment_for&order={% if current_sort == 'payment_for' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Za koho
+                                                {% if current_sort == 'payment_for' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        <th>
+                                            <a href="?tab=manage&type={{ transaction_type_filter }}&category={{ category_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&approved={{ approved_filter }}&sort=approved&order={% if current_sort == 'approved' and current_order == 'desc' %}asc{% else %}desc{% endif %}" class="text-decoration-none text-dark">
+                                                Status
+                                                {% if current_sort == 'approved' %}
+                                                    {% if current_order == 'asc' %}
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    {% else %}
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    {% endif %}
+                                                {% endif %}
+                                            </a>
+                                        </th>
+                                        {% endwith %}
+                                        <th>Akce</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for transaction in transactions %}
+                                    <tr>
+                                        <td>{{ transaction.date|date:"d.m.Y" }}</td>
+                                        <td>
+                                            {{ transaction.description }}
+                                            {% if transaction.recurring_payment %}
+                                                <a href="{% url 'recurring_payments' %}" class="badge bg-info text-decoration-none ms-1" title="Trvalá platba: {{ transaction.recurring_payment.name }}">
+                                                    (R)
+                                                </a>
+                                            {% endif %}
+                                            {% if transaction.is_imported %}
+                                                <span class="badge bg-secondary text-decoration-none ms-1" title="Importováno">
+                                                    (Imp)
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if transaction.transaction_type == 'INCOME' %}
+                                                <span class="badge bg-success">Příjem</span>
+                                            {% elif transaction.transaction_type == 'EXPENSE' %}
+                                                <span class="badge bg-danger">Výdaj</span>
+                                            {% else %}
+                                                <span class="badge bg-warning">Investice</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ transaction.category.name|default:"-" }} {% if transaction.subcategory %}/ {{ transaction.subcategory.name }}{% endif %}</td>
+                                        <td><strong>{{ transaction.amount|czech_int }} Kč</strong></td>
+                                        <td>{{ transaction.created_by.username|default:"-" }}</td>
+                                        <td>{{ transaction.created_at|date:"d.m.Y H:i" }}</td>
+                                        <td>{{ transaction.get_payment_for_display }}</td>
+                                        <td>
+                                            {% if transaction.approved %}
+                                                <span class="badge badge-approved">Schváleno</span>
+                                            {% else %}
+                                                <span class="badge badge-pending">Čeká na schválení</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <a href="{% url 'edit_transaction' transaction.pk %}" class="btn btn-sm btn-outline-primary" title="Upravit">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                            {% if not transaction.approved %}
+                                                <a href="{% url 'approve_transaction' transaction.pk %}" class="btn btn-sm btn-outline-success" title="Schválit">
+                                                    <i class="bi bi-check-circle"></i>
+                                                </a>
+                                            {% endif %}
+                                            {% if transaction.is_imported %}
+                                                <a href="{% url 'remove_transaction' transaction.pk %}" class="btn btn-sm btn-outline-danger" title="Odstranit" onclick="return confirm('Opravdu chcete odstranit tuto importovanou transakci?');">
+                                                    <i class="bi bi-trash"></i>
+                                                </a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="10" class="text-center text-muted">Žádné transakce nenalezeny</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Handle tab switching from URL parameter
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tab = urlParams.get('tab');
+        if (tab === 'manage') {
+            const manageTab = document.getElementById('manage-tab');
+            const addTab = document.getElementById('add-tab');
+            if (manageTab && addTab) {
+                addTab.classList.remove('active');
+                manageTab.classList.add('active');
+                document.getElementById('add').classList.remove('show', 'active');
+                document.getElementById('manage').classList.add('show', 'active');
+            }
+        } else if (tab === 'import-export') {
+            const importExportTab = document.getElementById('import-export-tab');
+            const addTab = document.getElementById('add-tab');
+            if (importExportTab && addTab) {
+                addTab.classList.remove('active');
+                importExportTab.classList.add('active');
+                document.getElementById('add').classList.remove('show', 'active');
+                document.getElementById('import-export').classList.add('show', 'active');
+            }
+        }
+        
+        // Drag and drop for import
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('import-file-input');
+        const importSubmit = document.getElementById('import-submit');
+        
+        if (dropZone && fileInput) {
+            // Click to select file
+            dropZone.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // Update submit button state
+            fileInput.addEventListener('change', function() {
+                importSubmit.disabled = !this.files.length;
+                if (this.files.length) {
+                    dropZone.innerHTML = '<i class="bi bi-file-earmark-check" style="font-size: 3rem; color: #28a745;"></i><p class="mt-2 mb-0">' + this.files[0].name + '</p>';
+                }
+            });
+            
+            // Drag and drop handlers
+            dropZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.style.backgroundColor = '#e9ecef';
+            });
+            
+            dropZone.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.style.backgroundColor = '';
+            });
+            
+            dropZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.style.backgroundColor = '';
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    importSubmit.disabled = false;
+                    dropZone.innerHTML = '<i class="bi bi-file-earmark-check" style="font-size: 3rem; color: #28a745;"></i><p class="mt-2 mb-0">' + files[0].name + '</p>';
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}
+

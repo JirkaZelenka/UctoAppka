@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% load czech_filters %}
+
+{% block title %}Odstranit transakci - UctoAppka{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-exclamation-triangle"></i> Odstranit transakci
+                </h4>
+            </div>
+            <div class="card-body">
+                <p>Opravdu chcete odstranit tuto importovanou transakci?</p>
+                <div class="alert alert-warning">
+                    <strong>Transakce:</strong><br>
+                    Datum: {{ transaction.date|date:"d.m.Y" }}<br>
+                    Popis: {{ transaction.description }}<br>
+                    Částka: {{ transaction.amount|czech_int }} Kč<br>
+                    Typ: {{ transaction.get_transaction_type_display }}
+                </div>
+                <p class="text-muted"><small>Poznámka: Transakce bude označena jako smazaná a nebude se zobrazovat v seznamech.</small></p>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash"></i> Ano, odstranit
+                        </button>
+                        <a href="{% url 'manage_transactions' %}?tab=manage" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle"></i> Zrušit
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

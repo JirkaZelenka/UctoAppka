@@ -260,6 +260,16 @@
                 this.style.backgroundColor = '';
             });
         });
+        
+        // Prevent mouse wheel from changing value in amount field
+        const amountField = document.getElementById('{{ form.amount.id_for_label }}');
+        if (amountField) {
+            amountField.addEventListener('wheel', function(e) {
+                if (document.activeElement === amountField) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+        }
     });
 </script>
 {% endblock %}

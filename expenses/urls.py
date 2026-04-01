@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('manage-transactions/', views.manage_transactions, name='manage_transactions'),
     path('add-transaction/', views.add_transaction, name='add_transaction'),
     path('edit-transaction/<int:pk>/', views.edit_transaction, name='edit_transaction'),
     path('approve-transaction/<int:pk>/', views.approve_transaction, name='approve_transaction'),
@@ -14,5 +15,8 @@ urlpatterns = [
     path('edit-investment/<int:pk>/', views.edit_investment, name='edit_investment'),
     path('settings/', views.settings, name='settings'),
     path('api/subcategories/', views.get_subcategories, name='get_subcategories'),
+    path('export-transactions/', views.export_transactions, name='export_transactions'),
+    path('import-transactions/', views.import_transactions, name='import_transactions'),
+    path('remove-transaction/<int:pk>/', views.remove_transaction, name='remove_transaction'),
 ]
 

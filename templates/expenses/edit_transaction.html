@@ -12,7 +12,12 @@
                 </h4>
             </div>
             <div class="card-body">
-                <form method="post">
+                {% if transaction.approved %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>Upozornění:</strong> Tato transakce je již schválena. Změny schválených transakcí by měly být prováděny opatrně.
+                </div>
+                {% endif %}
+                <form method="post" id="edit-transaction-form">
                     {% csrf_token %}
                     <div class="row">
                         <div class="col-md-6 mb-3">
@@ -100,17 +105,37 @@
                                         e.preventDefault();
                                     }
                                 });
+                                
+                                // Prevent mouse wheel from changing value
+                                amountField.addEventListener('wheel', function(e) {
+                                    if (document.activeElement === amountField) {
+                                        e.preventDefault();
+                                    }
+                                }, { passive: false });
                             }
                             
                             transactionType.addEventListener('change', toggleInvestmentField);
                             toggleInvestmentField(); // Check on page load
+                            
+                            // Confirmation popup for approved transactions
+                            {% if transaction.approved %}
+                            const form = document.getElementById('edit-transaction-form');
+                            if (form) {
+                                form.addEventListener('submit', function(e) {
+                                    if (!confirm('Tato transakce je již schválena. Opravdu chcete provést změny?')) {
+                                        e.preventDefault();
+                                        return false;
+                                    }
+                                });
+                            }
+                            {% endif %}
                         });
                     </script>
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-save"></i> Uložit změny
                         </button>
-                        <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+                        <a href="{% url 'manage_transactions' %}?tab=manage" class="btn btn-outline-secondary">
                             <i class="bi bi-arrow-left"></i> Zrušit
                         </a>
                     </div>

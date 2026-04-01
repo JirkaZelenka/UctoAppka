@@ -1,15 +1,24 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Sum, Q, Count, Avg
+from django.db.models import Sum, Q, Count, Avg, Min, Max
 from django.utils import timezone
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from datetime import datetime, timedelta
 from decimal import Decimal
 import statistics
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.offline import plot
+import csv
+import io
+try:
+    import openpyxl
+    from openpyxl import Workbook
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
 
 from .models import (
     Transaction, Category, Subcategory, RecurringPayment,
@@ -58,10 +67,11 @@ def dashboard(request):
         end_date = today
         period_label = f"{today.strftime('%B %Y')}"
     
-    # Filtrování transakcí
+    # Filtrování transakcí (exclude deleted)
     transactions = Transaction.objects.filter(
         date__gte=start_date,
-        date__lte=end_date
+        date__lte=end_date,
+        is_deleted=False
     )
     
     # Filtry
@@ -161,20 +171,114 @@ def dashboard(request):
 
 
 @login_required
-def add_transaction(request):
-    """Přidání nové transakce"""
-    if request.method == 'POST':
+def manage_transactions(request):
+    """Správa transakcí - Přidat, Import/Export, Spravuj"""
+    # Handle adding new transaction
+    if request.method == 'POST' and 'add_transaction' in request.POST:
         form = TransactionForm(request.POST)
         if form.is_valid():
             transaction = form.save(commit=False)
             transaction.created_by = request.user
             transaction.save()
             messages.success(request, 'Transakce byla úspěšně přidána.')
-            return redirect('dashboard')
+            return redirect(reverse('manage_transactions') + '?tab=manage')
     else:
         form = TransactionForm(initial={'created_by': request.user})
     
-    return render(request, 'expenses/add_transaction.html', {'form': form})
+    # Get all transactions for "Spravuj transakce" section (exclude deleted)
+    transactions = Transaction.objects.filter(is_deleted=False)
+    
+    # Get min and max dates from all transactions for default filter values
+    date_range = Transaction.objects.aggregate(
+        min_date=Min('date'),
+        max_date=Max('date')
+    )
+    
+    # Filters
+    transaction_type_filter = request.GET.get('type', '')
+    if transaction_type_filter:
+        transactions = transactions.filter(transaction_type=transaction_type_filter)
+    
+    category_filter = request.GET.get('category', '')
+    if category_filter:
+        transactions = transactions.filter(category_id=category_filter)
+    
+    # Date filters - use GET params if provided, otherwise use defaults
+    date_from = request.GET.get('date_from', '')
+    if not date_from and date_range['min_date']:
+        date_from = date_range['min_date'].strftime('%Y-%m-%d')
+    
+    if date_from:
+        transactions = transactions.filter(date__gte=date_from)
+    
+    date_to = request.GET.get('date_to', '')
+    if not date_to and date_range['max_date']:
+        date_to = date_range['max_date'].strftime('%Y-%m-%d')
+    
+    if date_to:
+        transactions = transactions.filter(date__lte=date_to)
+    
+    approved_filter = request.GET.get('approved', '')
+    if approved_filter == 'yes':
+        transactions = transactions.filter(approved=True)
+    elif approved_filter == 'no':
+        transactions = transactions.filter(approved=False)
+    
+    # Sorting
+    sort_by = request.GET.get('sort', 'date')
+    sort_order = request.GET.get('order', 'desc')
+    
+    sort_fields = {
+        'date': 'date',
+        'description': 'description',
+        'type': 'transaction_type',
+        'category': 'category__name',
+        'amount': 'amount',
+        'created_by': 'created_by__username',
+        'created_at': 'created_at',
+        'payment_for': 'payment_for',
+        'approved': 'approved',
+    }
+    
+    if sort_by not in sort_fields:
+        sort_by = 'date'
+    
+    order_field = sort_fields[sort_by]
+    
+    if sort_order == 'asc':
+        transactions = transactions.order_by(order_field, '-created_at')
+    else:
+        transactions = transactions.order_by(f'-{order_field}', '-created_at')
+    
+    categories = Category.objects.all()
+    
+    # Get min and max dates for export form
+    date_range = Transaction.objects.filter(is_deleted=False).aggregate(
+        min_date=Min('date'),
+        max_date=Max('date')
+    )
+    
+    context = {
+        'form': form,
+        'transactions': transactions,
+        'categories': categories,
+        'transaction_type_filter': transaction_type_filter,
+        'category_filter': category_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'approved_filter': approved_filter,
+        'sort_by': sort_by,
+        'sort_order': sort_order,
+        'date_range': date_range,
+    }
+    
+    return render(request, 'expenses/manage_transactions.html', context)
+
+
+@login_required
+def add_transaction(request):
+    """Přidání nové transakce - redirect to manage_transactions"""
+    return redirect('manage_transactions')
 
 
 @login_required
@@ -187,7 +291,12 @@ def edit_transaction(request, pk):
         if form.is_valid():
             form.save()
             messages.success(request, 'Transakce byla úspěšně upravena.')
-            return redirect('dashboard')
+            # Redirect back to the page that called this (dashboard or manage_transactions)
+            referer = request.META.get('HTTP_REFERER', '')
+            if 'manage-transactions' in referer:
+                return redirect(reverse('manage_transactions') + '?tab=manage')
+            else:
+                return redirect('dashboard')
     else:
         # Prefill form with transaction data, ensuring date is set
         form = TransactionForm(instance=transaction)
@@ -205,7 +314,12 @@ def approve_transaction(request, pk):
     transaction.approved = True
     transaction.save()
     messages.success(request, 'Transakce byla schválena.')
-    return redirect('dashboard')
+    # Redirect back to the page that called this (dashboard or manage_transactions)
+    referer = request.META.get('HTTP_REFERER', '')
+    if 'manage-transactions' in referer:
+        return redirect(reverse('manage_transactions') + '?tab=manage')
+    else:
+        return redirect('dashboard')
 
 
 @login_required
@@ -216,7 +330,7 @@ def statistics(request):
     end_date = request.GET.get('end_date', '')
     category_filter = request.GET.get('category', '')
     
-    transactions = Transaction.objects.all()
+    transactions = Transaction.objects.filter(is_deleted=False)
     
     if start_date:
         transactions = transactions.filter(date__gte=start_date)
@@ -901,4 +1015,370 @@ def get_subcategories(request):
         subcategories = Subcategory.objects.filter(category_id=category_id).values('id', 'name')
         return JsonResponse(list(subcategories), safe=False)
     return JsonResponse([], safe=False)
+
+
+@login_required
+def export_transactions(request):
+    """Export transakcí do CSV nebo Excel"""
+    # Get date filters
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    export_format = request.GET.get('format', 'csv')  # 'csv' or 'excel'
+    
+    # Get all transactions (exclude deleted)
+    transactions = Transaction.objects.filter(is_deleted=False)
+    
+    # Apply date filters
+    if date_from:
+        transactions = transactions.filter(date__gte=date_from)
+    if date_to:
+        transactions = transactions.filter(date__lte=date_to)
+    
+    # Order by date
+    transactions = transactions.order_by('date', 'created_at')
+    
+    if export_format == 'excel' and OPENPYXL_AVAILABLE:
+        # Export to Excel
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Transakce"
+        
+        # Headers
+        headers = [
+            'Datum', 'Popis', 'Typ', 'Kategorie', 'Subkategorie', 
+            'Částka (Kč)', 'Za koho', 'Na kolik měsíců', 
+            'Schváleno', 'Poznámka', 'Kdo zapsal', 'Datum zapsání', 'Importováno'
+        ]
+        ws.append(headers)
+        
+        # Data
+        for t in transactions:
+            ws.append([
+                t.date.strftime('%Y-%m-%d') if t.date else '',
+                t.description,
+                t.get_transaction_type_display(),
+                t.category.name if t.category else '',
+                t.subcategory.name if t.subcategory else '',
+                float(t.amount),
+                t.get_payment_for_display(),
+                t.months_duration,
+                'Ano' if t.approved else 'Ne',
+                t.note,
+                t.created_by.username if t.created_by else '',
+                t.created_at.strftime('%Y-%m-%d %H:%M:%S') if t.created_at else '',
+                'Ano' if t.is_imported else 'Ne',
+            ])
+        
+        # Create response
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        filename = f'transakce_{date_from or "all"}_{date_to or "all"}.xlsx'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        wb.save(response)
+        return response
+    
+    else:
+        # Export to CSV
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        filename = f'transakce_{date_from or "all"}_{date_to or "all"}.csv'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # Add BOM for Excel UTF-8 compatibility
+        response.write('\ufeff')
+        
+        writer = csv.writer(response)
+        
+        # Headers
+        writer.writerow([
+            'Datum', 'Popis', 'Typ', 'Kategorie', 'Subkategorie', 
+            'Částka (Kč)', 'Za koho', 'Na kolik měsíců', 
+            'Schváleno', 'Poznámka', 'Kdo zapsal', 'Datum zapsání', 'Importováno'
+        ])
+        
+        # Data
+        for t in transactions:
+            writer.writerow([
+                t.date.strftime('%Y-%m-%d') if t.date else '',
+                t.description,
+                t.get_transaction_type_display(),
+                t.category.name if t.category else '',
+                t.subcategory.name if t.subcategory else '',
+                float(t.amount),
+                t.get_payment_for_display(),
+                t.months_duration,
+                'Ano' if t.approved else 'Ne',
+                t.note,
+                t.created_by.username if t.created_by else '',
+                t.created_at.strftime('%Y-%m-%d %H:%M:%S') if t.created_at else '',
+                'Ano' if t.is_imported else 'Ne',
+            ])
+        
+        return response
+
+
+@login_required
+def import_transactions(request):
+    """Import transakcí z Excel souboru"""
+    if request.method == 'POST' and request.FILES.get('file'):
+        file = request.FILES['file']
+        
+        # Check file extension
+        if not (file.name.endswith('.xlsx') or file.name.endswith('.xls') or file.name.endswith('.csv')):
+            messages.error(request, 'Nepodporovaný formát souboru. Použijte .xlsx, .xls nebo .csv.')
+            return redirect('manage_transactions?tab=import-export')
+        
+        try:
+            imported_count = 0
+            errors = []
+            
+            if file.name.endswith('.csv'):
+                # Parse CSV
+                file_content = file.read().decode('utf-8-sig')  # Handle BOM
+                csv_reader = csv.DictReader(io.StringIO(file_content))
+                
+                # Expected headers (flexible matching)
+                header_mapping = {
+                    'datum': 'date',
+                    'popis': 'description',
+                    'typ': 'transaction_type',
+                    'kategorie': 'category',
+                    'subkategorie': 'subcategory',
+                    'částka (kč)': 'amount',
+                    'za koho': 'payment_for',
+                    'na kolik měsíců': 'months_duration',
+                    'schváleno': 'approved',
+                    'poznámka': 'note',
+                }
+                
+                for row_num, row in enumerate(csv_reader, start=2):
+                    try:
+                        # Map headers (case-insensitive)
+                        row_lower = {k.lower().strip(): v for k, v in row.items()}
+                        
+                        # Extract data
+                        date_str = row_lower.get('datum', '').strip()
+                        description = row_lower.get('popis', '').strip()
+                        type_str = row_lower.get('typ', '').strip()
+                        category_name = row_lower.get('kategorie', '').strip()
+                        subcategory_name = row_lower.get('subkategorie', '').strip()
+                        amount_str = row_lower.get('částka (kč)', '').strip()
+                        
+                        if not date_str or not description or not amount_str:
+                            errors.append(f'Řádek {row_num}: Chybí povinná pole')
+                            continue
+                        
+                        # Parse date
+                        try:
+                            date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                        except:
+                            errors.append(f'Řádek {row_num}: Neplatné datum: {date_str}')
+                            continue
+                        
+                        # Parse amount
+                        try:
+                            amount = Decimal(str(amount_str).replace(',', '.'))
+                        except:
+                            errors.append(f'Řádek {row_num}: Neplatná částka: {amount_str}')
+                            continue
+                        
+                        # Map transaction type
+                        type_map = {'příjem': TransactionType.INCOME, 'výdaj': TransactionType.EXPENSE, 
+                                   'investice': TransactionType.INVESTMENT, 'investice (přesun)': TransactionType.INVESTMENT}
+                        transaction_type = type_map.get(type_str.lower(), TransactionType.EXPENSE)
+                        
+                        # Find category
+                        category = None
+                        if category_name:
+                            category = Category.objects.filter(name__iexact=category_name).first()
+                        
+                        # Find subcategory
+                        subcategory = None
+                        if subcategory_name and category:
+                            subcategory = Subcategory.objects.filter(
+                                category=category, 
+                                name__iexact=subcategory_name
+                            ).first()
+                        
+                        # Payment for
+                        payment_for_str = row_lower.get('za koho', '').strip().lower()
+                        payment_for_map = {'za sebe': PaymentFor.SELF, 'za partnera': PaymentFor.PARTNER, 
+                                          'společný účet': PaymentFor.SHARED}
+                        payment_for = payment_for_map.get(payment_for_str, PaymentFor.SELF)
+                        
+                        # Months duration
+                        months_duration = 0
+                        if row_lower.get('na kolik měsíců'):
+                            try:
+                                months_duration = int(row_lower.get('na kolik měsíců'))
+                            except:
+                                pass
+                        
+                        # Approved
+                        approved_str = row_lower.get('schváleno', '').strip().lower()
+                        approved = approved_str in ('ano', 'yes', 'true', '1')
+                        
+                        # Note
+                        note = row_lower.get('poznámka', '').strip()
+                        
+                        # Create transaction
+                        transaction = Transaction.objects.create(
+                            date=date,
+                            description=description,
+                            transaction_type=transaction_type,
+                            category=category,
+                            subcategory=subcategory,
+                            amount=amount,
+                            payment_for=payment_for,
+                            months_duration=months_duration,
+                            approved=approved,
+                            note=note,
+                            created_by=request.user,
+                            is_imported=True,
+                            is_deleted=False
+                        )
+                        imported_count += 1
+                        
+                    except Exception as e:
+                        errors.append(f'Řádek {row_num}: Chyba - {str(e)}')
+            
+            elif OPENPYXL_AVAILABLE:
+                # Parse Excel
+                wb = openpyxl.load_workbook(file)
+                ws = wb.active
+                
+                # Read headers
+                headers = [cell.value.lower().strip() if cell.value else '' for cell in ws[1]]
+                
+                # Process rows
+                for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                    try:
+                        row_dict = dict(zip(headers, row))
+                        
+                        # Extract data (same logic as CSV)
+                        date_str = str(row_dict.get('datum', '')).strip()
+                        description = str(row_dict.get('popis', '')).strip()
+                        type_str = str(row_dict.get('typ', '')).strip()
+                        category_name = str(row_dict.get('kategorie', '')).strip()
+                        subcategory_name = str(row_dict.get('subkategorie', '')).strip()
+                        amount_str = str(row_dict.get('částka (kč)', '')).strip()
+                        
+                        if not date_str or not description or not amount_str:
+                            continue
+                        
+                        # Parse date
+                        if isinstance(row_dict.get('datum'), datetime):
+                            date = row_dict['datum'].date()
+                        else:
+                            try:
+                                date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                            except:
+                                errors.append(f'Řádek {row_num}: Neplatné datum: {date_str}')
+                                continue
+                        
+                        # Parse amount
+                        try:
+                            if isinstance(row_dict.get('částka (kč)'), (int, float)):
+                                amount = Decimal(str(row_dict['částka (kč)']))
+                            else:
+                                amount = Decimal(str(amount_str).replace(',', '.'))
+                        except:
+                            errors.append(f'Řádek {row_num}: Neplatná částka: {amount_str}')
+                            continue
+                        
+                        # Map transaction type
+                        type_map = {'příjem': TransactionType.INCOME, 'výdaj': TransactionType.EXPENSE, 
+                                   'investice': TransactionType.INVESTMENT, 'investice (přesun)': TransactionType.INVESTMENT}
+                        transaction_type = type_map.get(type_str.lower(), TransactionType.EXPENSE)
+                        
+                        # Find category
+                        category = None
+                        if category_name:
+                            category = Category.objects.filter(name__iexact=category_name).first()
+                        
+                        # Find subcategory
+                        subcategory = None
+                        if subcategory_name and category:
+                            subcategory = Subcategory.objects.filter(
+                                category=category, 
+                                name__iexact=subcategory_name
+                            ).first()
+                        
+                        # Payment for
+                        payment_for_str = str(row_dict.get('za koho', '')).strip().lower()
+                        payment_for_map = {'za sebe': PaymentFor.SELF, 'za partnera': PaymentFor.PARTNER, 
+                                          'společný účet': PaymentFor.SHARED}
+                        payment_for = payment_for_map.get(payment_for_str, PaymentFor.SELF)
+                        
+                        # Months duration
+                        months_duration = 0
+                        if row_dict.get('na kolik měsíců'):
+                            try:
+                                months_duration = int(row_dict.get('na kolik měsíců'))
+                            except:
+                                pass
+                        
+                        # Approved
+                        approved_str = str(row_dict.get('schváleno', '')).strip().lower()
+                        approved = approved_str in ('ano', 'yes', 'true', '1')
+                        
+                        # Note
+                        note = str(row_dict.get('poznámka', '')).strip()
+                        
+                        # Create transaction
+                        transaction = Transaction.objects.create(
+                            date=date,
+                            description=description,
+                            transaction_type=transaction_type,
+                            category=category,
+                            subcategory=subcategory,
+                            amount=amount,
+                            payment_for=payment_for,
+                            months_duration=months_duration,
+                            approved=approved,
+                            note=note,
+                            created_by=request.user,
+                            is_imported=True,
+                            is_deleted=False
+                        )
+                        imported_count += 1
+                        
+                    except Exception as e:
+                        errors.append(f'Řádek {row_num}: Chyba - {str(e)}')
+            else:
+                messages.error(request, 'Pro import Excel souborů je potřeba nainstalovat openpyxl: pip install openpyxl')
+                return redirect('manage_transactions?tab=import-export')
+            
+            if imported_count > 0:
+                messages.success(request, f'Úspěšně importováno {imported_count} transakcí.')
+            if errors:
+                messages.warning(request, f'Při importu došlo k {len(errors)} chybám. Zkontrolujte data.')
+            
+            return redirect('manage_transactions?tab=manage')
+            
+        except Exception as e:
+            messages.error(request, f'Chyba při importu: {str(e)}')
+            return redirect('manage_transactions?tab=import-export')
+    
+    return redirect('manage_transactions?tab=import-export')
+
+
+@login_required
+def remove_transaction(request, pk):
+    """Soft delete transakce (pouze pro importované)"""
+    transaction = get_object_or_404(Transaction, pk=pk)
+    
+    if not transaction.is_imported:
+        messages.error(request, 'Lze odstranit pouze importované transakce.')
+        return redirect('manage_transactions?tab=manage')
+    
+    if request.method == 'POST':
+        transaction.is_deleted = True
+        transaction.save()
+        messages.success(request, 'Transakce byla odstraněna.')
+        return redirect('manage_transactions?tab=manage')
+    
+    # GET request - show confirmation
+    return render(request, 'expenses/confirm_remove_transaction.html', {'transaction': transaction})
 

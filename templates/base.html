@@ -158,8 +158,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'add_transaction' %}active{% endif %}" href="{% url 'add_transaction' %}">
-                            <i class="bi bi-plus-circle"></i> Přidat transakci
+                        <a class="nav-link {% if request.resolver_match.url_name == 'manage_transactions' or request.resolver_match.url_name == 'add_transaction' %}active{% endif %}" href="{% url 'manage_transactions' %}">
+                            <i class="bi bi-pencil-square"></i> Upravovat transakce
                         </a>
                     </li>
                     <li class="nav-item">

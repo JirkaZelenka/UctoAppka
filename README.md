@@ -69,3 +69,6 @@ TODO:
 - respektive jeden úhel pohledu = Příjmy a Výdaje a Investice,
 - druhý úhel jsou samotné investice a jejich stav
 - třetí úhel je stav majetku, což se může a nemusí přímo odvíjet od příjmů a výdajů + růstu investic
+
+- backup DB, respektive transakcí, pravidelný excel export?
+-> Fully ready !

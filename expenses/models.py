@@ -82,6 +82,8 @@ class Transaction(models.Model):
     # Další
     note = models.TextField(blank=True, verbose_name="Poznámka")
     approved = models.BooleanField(default=False, verbose_name="Schváleno")
+    is_imported = models.BooleanField(default=False, verbose_name="Importováno")
+    is_deleted = models.BooleanField(default=False, verbose_name="Smazáno")
     
     # Pro investice - link na investiční skupinu
     investment = models.ForeignKey('Investment', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', verbose_name="Investiční skupina")

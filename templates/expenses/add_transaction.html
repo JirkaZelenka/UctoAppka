@@ -100,6 +100,13 @@
                                         e.preventDefault();
                                     }
                                 });
+                                
+                                // Prevent mouse wheel from changing value
+                                amountField.addEventListener('wheel', function(e) {
+                                    if (document.activeElement === amountField) {
+                                        e.preventDefault();
+                                    }
+                                }, { passive: false });
                             }
                             
                             transactionType.addEventListener('change', toggleInvestmentField);
