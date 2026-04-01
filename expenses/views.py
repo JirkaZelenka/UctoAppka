@@ -1,3 +1,6 @@
+import os
+import subprocess
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.contrib.auth.decorators import login_required
@@ -5,6 +8,7 @@ from django.contrib import messages
 from django.db.models import Sum, Q, Count, Avg, Min, Max
 from django.utils import timezone
 from django.http import JsonResponse, HttpResponse
+from django.views.decorators.http import require_http_methods
 from datetime import datetime, timedelta
 from decimal import Decimal
 import statistics
@@ -25,6 +29,91 @@ from .models import (
     Investment, BudgetLimit, TransactionType, PaymentFor
 )
 from .forms import TransactionForm, CategoryForm, SubcategoryForm, InvestmentForm, InvestmentValueForm, RecurringPaymentForm
+
+
+def _first_env_value(names):
+    for name in names:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _git_short_commit():
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        return (result.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def _git_commit_date_iso():
+    try:
+        result = subprocess.run(
+            ["git", "show", "-s", "--format=%cI", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        return (result.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+@require_http_methods(["GET"])
+def health(_request):
+    # Prefer deployment-provided values, then fall back to local git metadata.
+    version = _first_env_value(
+        [
+            "APP_VERSION",
+            "RELEASE_VERSION",
+            "FLY_IMAGE_REF",
+            "FLY_RELEASE_ID",
+            "GITHUB_REF_NAME",
+            "GITHUB_RUN_NUMBER",
+        ]
+    )
+    commit = _first_env_value(
+        [
+            "APP_COMMIT",
+            "COMMIT_SHA",
+            "GIT_COMMIT",
+            "SOURCE_COMMIT",
+            "GITHUB_SHA",
+        ]
+    )
+    if not commit:
+        commit = _git_short_commit()
+    commit_date = _first_env_value(["APP_COMMIT_DATE", "COMMIT_DATE", "GITHUB_EVENT_HEAD_COMMIT_TIMESTAMP"])
+    if not commit_date:
+        commit_date = _git_commit_date_iso()
+
+    fly_info = {
+        "app": _first_env_value(["FLY_APP_NAME"]),
+        "region": _first_env_value(["FLY_REGION"]),
+        "machine_id": _first_env_value(["FLY_MACHINE_ID"]),
+        "instance_id": _first_env_value(["FLY_ALLOC_ID"]),
+        "release_id": _first_env_value(["FLY_RELEASE_ID"]),
+        "image_ref": _first_env_value(["FLY_IMAGE_REF"]),
+    }
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "timestamp": timezone.now().isoformat(),
+            "version": version,
+            "commit": commit,
+            "commit_date": commit_date,
+            "fly": fly_info,
+        }
+    )
 
 
 def calculate_split_amounts(transactions):
