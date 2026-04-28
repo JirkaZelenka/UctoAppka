@@ -1,9 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}UctoAppka{% endblock %}</title>
+    <link rel="icon" href="{% static 'favicon.svg' %}" type="image/svg+xml">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
@@ -138,6 +140,25 @@
         .badge-pending {
             background-color: #ffc107;
         }
+        .mobile-add-transaction {
+            position: fixed;
+            right: 16px;
+            bottom: 18px;
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            z-index: 1040;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+        }
+        @media (max-width: 768px) {
+            .mobile-add-transaction {
+                display: inline-flex;
+            }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -216,6 +237,9 @@
 
         {% block content %}{% endblock %}
     </div>
+    <a href="{% url 'manage_transactions' %}?tab=add" class="btn btn-primary mobile-add-transaction" title="Přidat transakci" aria-label="Přidat transakci">
+        <i class="bi bi-plus-lg"></i>
+    </a>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>

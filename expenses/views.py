@@ -268,11 +268,17 @@ def manage_transactions(request):
         if form.is_valid():
             transaction = form.save(commit=False)
             transaction.created_by = request.user
+            transaction.approved = False
             transaction.save()
             messages.success(request, 'Transakce byla úspěšně přidána.')
             return redirect(reverse('manage_transactions') + '?tab=manage')
     else:
-        form = TransactionForm(initial={'created_by': request.user})
+        form = TransactionForm(
+            initial={
+                'created_by': request.user,
+                'date': timezone.now().date().strftime('%Y-%m-%d'),
+            }
+        )
     
     # Get all transactions for "Spravuj transakce" section (exclude deleted)
     transactions = Transaction.objects.filter(is_deleted=False)
@@ -1029,8 +1035,10 @@ def edit_investment(request, pk):
 @login_required
 def settings(request):
     """Nastavení - kategorie a subkategorie"""
-    categories = Category.objects.all()
-    subcategories = Subcategory.objects.all()
+    categories = Category.objects.prefetch_related('subcategories').all()
+    subcategories = Subcategory.objects.select_related('category').all()
+    category_form = CategoryForm()
+    subcategory_form = SubcategoryForm()
     
     # Hledání anomálií
     anomalies = []
@@ -1070,26 +1078,23 @@ def settings(request):
     
     if request.method == 'POST':
         if 'add_category' in request.POST:
-            form = CategoryForm(request.POST)
-            if form.is_valid():
-                form.save()
+            category_form = CategoryForm(request.POST)
+            if category_form.is_valid():
+                category_form.save()
                 messages.success(request, 'Kategorie byla přidána.')
                 return redirect('settings')
         elif 'add_subcategory' in request.POST:
-            form = SubcategoryForm(request.POST)
-            if form.is_valid():
-                form.save()
+            subcategory_form = SubcategoryForm(request.POST)
+            if subcategory_form.is_valid():
+                subcategory_form.save()
                 messages.success(request, 'Subkategorie byla přidána.')
                 return redirect('settings')
-    else:
-        category_form = CategoryForm()
-        subcategory_form = SubcategoryForm()
     
     context = {
         'categories': categories,
         'subcategories': subcategories,
-        'category_form': CategoryForm(),
-        'subcategory_form': SubcategoryForm(),
+        'category_form': category_form,
+        'subcategory_form': subcategory_form,
         'anomalies': anomalies[:20],  # Limit na 20 anomálií
     }
     

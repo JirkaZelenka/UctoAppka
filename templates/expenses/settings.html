@@ -17,12 +17,18 @@
                     {% csrf_token %}
                     <input type="hidden" name="add_category" value="1">
                     <div class="mb-3">
-                        <label class="form-label">{{ category_form.name.label }}</label>
-                        {{ category_form.name }}
+                        <label class="form-label">{{ category_form.type.label }}</label>
+                        {{ category_form.type }}
+                        {% if category_form.type.errors %}
+                            <div class="text-danger small mt-1">{{ category_form.type.errors|join:", " }}</div>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">{{ category_form.description.label }}</label>
-                        {{ category_form.description }}
+                        <label class="form-label">{{ category_form.name.label }}</label>
+                        {{ category_form.name }}
+                        {% if category_form.name.errors %}
+                            <div class="text-danger small mt-1">{{ category_form.name.errors|join:", " }}</div>
+                        {% endif %}
                     </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-plus-circle"></i> Přidat kategorii
@@ -33,19 +39,33 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
+                                <th>Typ</th>
                                 <th>Název</th>
-                                <th>Popis</th>
+                                <th>Členy</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for category in categories %}
                             <tr>
+                                <td>
+                                    {% if category.type == 'INCOME' %}
+                                        <span class="badge bg-success">Příjem</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Výdaj</span>
+                                    {% endif %}
+                                </td>
                                 <td><strong>{{ category.name }}</strong></td>
-                                <td>{{ category.description|default:"-" }}</td>
+                                <td>
+                                    {% for member in category.subcategories.all %}
+                                        {{ member.name }}{% if not forloop.last %}, {% endif %}
+                                    {% empty %}
+                                        -
+                                    {% endfor %}
+                                </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="2" class="text-center text-muted">Žádné kategorie</td>
+                                <td colspan="3" class="text-center text-muted">Žádné kategorie</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -69,14 +89,16 @@
                     <div class="mb-3">
                         <label class="form-label">{{ subcategory_form.category.label }}</label>
                         {{ subcategory_form.category }}
+                        {% if subcategory_form.category.errors %}
+                            <div class="text-danger small mt-1">{{ subcategory_form.category.errors|join:", " }}</div>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <label class="form-label">{{ subcategory_form.name.label }}</label>
                         {{ subcategory_form.name }}
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">{{ subcategory_form.description.label }}</label>
-                        {{ subcategory_form.description }}
+                        {% if subcategory_form.name.errors %}
+                            <div class="text-danger small mt-1">{{ subcategory_form.name.errors|join:", " }}</div>
+                        {% endif %}
                     </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-plus-circle"></i> Přidat subkategorii
@@ -89,7 +111,6 @@
                             <tr>
                                 <th>Kategorie</th>
                                 <th>Název</th>
-                                <th>Popis</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -97,11 +118,10 @@
                             <tr>
                                 <td>{{ subcategory.category.name }}</td>
                                 <td><strong>{{ subcategory.name }}</strong></td>
-                                <td>{{ subcategory.description|default:"-" }}</td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="3" class="text-center text-muted">Žádné subkategorie</td>
+                                <td colspan="2" class="text-center text-muted">Žádné subkategorie</td>
                             </tr>
                             {% endfor %}
                         </tbody>

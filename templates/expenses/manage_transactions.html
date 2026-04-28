@@ -35,6 +35,35 @@
     .nav-tabs {
         border-bottom: 1px solid #dee2e6;
     }
+    .transaction-tile {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .tile-title {
+        font-size: 0.85rem;
+        color: #6c757d;
+        margin-bottom: 0.5rem;
+    }
+    .amount-input {
+        font-size: 1.6rem;
+        font-weight: 700;
+        text-align: center;
+    }
+    .toggle-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .toggle-group .btn {
+        flex: 1;
+    }
+    .divider-muted {
+        border-top: 1px dashed #ced4da;
+        margin: 1.25rem 0;
+        padding-top: 1rem;
+    }
 </style>
 {% endblock %}
 
@@ -73,108 +102,94 @@
                     <div class="tab-pane fade show active" id="add" role="tabpanel">
                         <div class="row">
                             <div class="col-md-8 offset-md-2">
-                                <form method="post">
+                                <form method="post" id="transaction-create-form">
                                     {% csrf_token %}
                                     <input type="hidden" name="add_transaction" value="1">
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label class="form-label">{{ form.amount.label }}</label>
-                                            {{ form.amount }}
-                                        </div>
-                                        <div class="col-md-6 mb-3">
-                                            <label class="form-label">{{ form.transaction_type.label }}</label>
-                                            {{ form.transaction_type }}
+                                    <div class="transaction-tile">
+                                        <div class="tile-title">Částka</div>
+                                        {{ form.amount }}
+                                        {% if form.amount.errors %}
+                                            <div class="text-danger small mt-1">{{ form.amount.errors|join:", " }}</div>
+                                        {% endif %}
+                                    </div>
+
+                                    {{ form.transaction_type.as_hidden }}
+                                    <div class="transaction-tile">
+                                        <div class="tile-title">Typ</div>
+                                        <div class="toggle-group">
+                                            <button type="button" class="btn btn-outline-danger toggle-transaction-type" data-value="EXPENSE">Výdaj</button>
+                                            <button type="button" class="btn btn-outline-success toggle-transaction-type" data-value="INCOME">Příjem</button>
                                         </div>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">{{ form.description.label }}</label>
-                                        {{ form.description }}
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label class="form-label">{{ form.category.label }}</label>
-                                            {{ form.category }}
-                                        </div>
-                                        <div class="col-md-6 mb-3">
-                                            <label class="form-label">{{ form.subcategory.label }}</label>
-                                            {{ form.subcategory }}
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label class="form-label">{{ form.date.label }}</label>
-                                            {{ form.date }}
-                                        </div>
-                                        <div class="col-md-6 mb-3">
-                                            <label class="form-label">{{ form.months_duration.label }}</label>
-                                            {{ form.months_duration }}
+
+                                    <div class="transaction-tile">
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ form.category.label }}</label>
+                                                <select name="category" id="{{ form.category.id_for_label }}" class="form-control">
+                                                    <option value="">---------</option>
+                                                    {% for category in categories %}
+                                                        <option value="{{ category.id }}" data-type="{{ category.type }}">{{ category.name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ form.subcategory.label }}</label>
+                                                <select name="subcategory" id="{{ form.subcategory.id_for_label }}" class="form-control">
+                                                    <option value="">---------</option>
+                                                </select>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label class="form-label">{{ form.payment_for.label }}</label>
-                                            {{ form.payment_for }}
+
+                                    <div class="transaction-tile">
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ form.date.label }}</label>
+                                                {{ form.date }}
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">{{ form.description.label }}</label>
+                                                {{ form.description }}
+                                            </div>
                                         </div>
-                                        <div class="col-md-6 mb-3">
-                                            <div class="form-check mt-4">
+                                    </div>
+
+                                    <div class="divider-muted">
+                                        <h6 class="text-muted mb-3">Doplňkové možnosti</h6>
+                                        {{ form.payment_for.as_hidden }}
+                                        <div class="transaction-tile">
+                                            <div class="tile-title">Za koho placeno</div>
+                                            <div class="toggle-group">
+                                                <button type="button" class="btn btn-outline-primary toggle-payment-for" data-value="SELF">Sám</button>
+                                                <button type="button" class="btn btn-outline-primary toggle-payment-for" data-value="SHARED">Společný</button>
+                                            </div>
+                                        </div>
+                                        <div class="transaction-tile">
+                                            <div class="row">
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">{{ form.months_duration.label }}</label>
+                                                    {{ form.months_duration }}
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <div class="form-check form-switch pt-4">
+                                                        {{ form.is_recurring }}
+                                                        <label class="form-check-label" for="{{ form.is_recurring.id_for_label }}">Trvalé platby (ANO/NE)</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="transaction-tile">
+                                            <div class="form-check">
                                                 {{ form.approved }}
                                                 <label class="form-check-label" for="{{ form.approved.id_for_label }}">
-                                                    {{ form.approved.label }}
+                                                    {{ form.approved.label }} (jen po vytvoření)
                                                 </label>
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="mb-3" id="investment-field" style="display: none;">
-                                        <label class="form-label">{{ form.investment.label }}</label>
-                                        {{ form.investment }}
-                                        <small class="form-text text-muted">Vyberte investiční skupinu pro tuto transakci</small>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">{{ form.note.label }}</label>
-                                        {{ form.note }}
-                                    </div>
-                                    <script>
-                                        document.addEventListener('DOMContentLoaded', function() {
-                                            const transactionType = document.getElementById('{{ form.transaction_type.id_for_label }}');
-                                            const investmentField = document.getElementById('investment-field');
-                                            const amountField = document.getElementById('{{ form.amount.id_for_label }}');
-                                            
-                                            function toggleInvestmentField() {
-                                                if (transactionType.value === 'INVESTMENT') {
-                                                    investmentField.style.display = 'block';
-                                                } else {
-                                                    investmentField.style.display = 'none';
-                                                }
-                                            }
-                                            
-                                            // Prevent decimal input in amount field
-                                            if (amountField) {
-                                                amountField.addEventListener('input', function(e) {
-                                                    if (e.target.value.includes('.')) {
-                                                        e.target.value = e.target.value.split('.')[0];
-                                                    }
-                                                });
-                                                
-                                                amountField.addEventListener('keydown', function(e) {
-                                                    if (e.key === '.' || e.key === ',' || (e.key === '-' && e.target.selectionStart !== 0)) {
-                                                        e.preventDefault();
-                                                    }
-                                                });
-                                                
-                                                // Prevent mouse wheel from changing value
-                                                amountField.addEventListener('wheel', function(e) {
-                                                    if (document.activeElement === amountField) {
-                                                        e.preventDefault();
-                                                    }
-                                                }, { passive: false });
-                                            }
-                                            
-                                            transactionType.addEventListener('change', toggleInvestmentField);
-                                            toggleInvestmentField();
-                                        });
-                                    </script>
                                     <div class="d-grid gap-2">
-                                        <button type="submit" class="btn btn-primary">
+                                        <button type="submit" class="btn btn-primary" id="save-transaction-btn">
                                             <i class="bi bi-save"></i> Uložit transakci
                                         </button>
                                     </div>
@@ -569,6 +584,94 @@
                 }
             });
         }
+
+        const transactionTypeInput = document.getElementById('{{ form.transaction_type.id_for_label }}');
+        const paymentForInput = document.getElementById('{{ form.payment_for.id_for_label }}');
+        const categorySelect = document.getElementById('{{ form.category.id_for_label }}');
+        const subcategorySelect = document.getElementById('{{ form.subcategory.id_for_label }}');
+        const amountField = document.getElementById('{{ form.amount.id_for_label }}');
+        const dateField = document.getElementById('{{ form.date.id_for_label }}');
+        const descriptionField = document.getElementById('{{ form.description.id_for_label }}');
+        const saveBtn = document.getElementById('save-transaction-btn');
+
+        function setToggleState(buttons, value) {
+            buttons.forEach(btn => {
+                const isActive = btn.dataset.value === value;
+                btn.classList.toggle('active', isActive);
+                if (btn.classList.contains('toggle-transaction-type')) {
+                    btn.classList.toggle('btn-danger', isActive && btn.dataset.value === 'EXPENSE');
+                    btn.classList.toggle('btn-success', isActive && btn.dataset.value === 'INCOME');
+                    btn.classList.toggle('btn-outline-danger', !isActive && btn.dataset.value === 'EXPENSE');
+                    btn.classList.toggle('btn-outline-success', !isActive && btn.dataset.value === 'INCOME');
+                } else {
+                    btn.classList.toggle('btn-primary', isActive);
+                    btn.classList.toggle('btn-outline-primary', !isActive);
+                }
+            });
+        }
+
+        const transactionButtons = document.querySelectorAll('.toggle-transaction-type');
+        const paymentButtons = document.querySelectorAll('.toggle-payment-for');
+
+        function applyTransactionType(value) {
+            transactionTypeInput.value = value;
+            setToggleState(transactionButtons, value);
+            Array.from(categorySelect.options).forEach(option => {
+                if (!option.value) {
+                    option.hidden = false;
+                    return;
+                }
+                option.hidden = option.dataset.type !== value;
+            });
+            if (categorySelect) {
+                categorySelect.value = '';
+            }
+            if (subcategorySelect) {
+                subcategorySelect.innerHTML = '<option value="">---------</option>';
+            }
+            validateCreateForm();
+        }
+
+        function applyPaymentFor(value) {
+            paymentForInput.value = value;
+            setToggleState(paymentButtons, value);
+        }
+
+        transactionButtons.forEach(btn => btn.addEventListener('click', () => applyTransactionType(btn.dataset.value)));
+        paymentButtons.forEach(btn => btn.addEventListener('click', () => applyPaymentFor(btn.dataset.value)));
+
+        applyTransactionType(transactionTypeInput.value || 'EXPENSE');
+        applyPaymentFor(paymentForInput.value || 'SELF');
+
+        if (amountField) {
+            amountField.addEventListener('input', function(e) {
+                if (e.target.value.includes('.') || e.target.value.includes(',')) {
+                    e.target.value = e.target.value.split(/[.,]/)[0];
+                }
+                validateCreateForm();
+            });
+        }
+
+        function validateCreateForm() {
+            const isValid = amountField.value && Number(amountField.value) > 0
+                && transactionTypeInput.value
+                && categorySelect.value
+                && subcategorySelect.value
+                && dateField.value
+                && descriptionField.value.trim();
+            if (saveBtn) {
+                saveBtn.disabled = !isValid;
+            }
+        }
+
+        [categorySelect, subcategorySelect, dateField, descriptionField].forEach(el => {
+            if (el) {
+                el.addEventListener('change', validateCreateForm);
+                el.addEventListener('input', validateCreateForm);
+            }
+        });
+
+        validateCreateForm();
     });
 </script>
 {% endblock %}

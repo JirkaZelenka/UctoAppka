@@ -4,10 +4,20 @@ from django.utils import timezone
 from decimal import Decimal
 
 
+class CategoryType(models.TextChoices):
+    INCOME = 'INCOME', 'Příjem'
+    EXPENSE = 'EXPENSE', 'Výdaj'
+
+
 class Category(models.Model):
     """Kategorie výdajů"""
+    type = models.CharField(
+        max_length=20,
+        choices=CategoryType.choices,
+        default=CategoryType.EXPENSE,
+        verbose_name="Typ",
+    )
     name = models.CharField(max_length=100, verbose_name="Název kategorie")
-    description = models.TextField(blank=True, verbose_name="Popis")
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -23,13 +33,18 @@ class Subcategory(models.Model):
     """Subkategorie výdajů"""
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='subcategories', verbose_name="Kategorie")
     name = models.CharField(max_length=100, verbose_name="Název subkategorie")
-    description = models.TextField(blank=True, verbose_name="Popis")
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         verbose_name = "Subkategorie"
         verbose_name_plural = "Subkategorie"
         ordering = ['category', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=["category", "name"],
+                name="unique_subcategory_name_per_category",
+            ),
+        ]
     
     def __str__(self):
         return f"{self.category.name} - {self.name}"
@@ -81,6 +96,7 @@ class Transaction(models.Model):
     
     # Další
     note = models.TextField(blank=True, verbose_name="Poznámka")
+    is_recurring = models.BooleanField(default=False, verbose_name="Trvalá platba")
     approved = models.BooleanField(default=False, verbose_name="Schváleno")
     is_imported = models.BooleanField(default=False, verbose_name="Importováno")
     is_deleted = models.BooleanField(default=False, verbose_name="Smazáno")

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Hrom�dka minc�">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#667eea"/>
+      <stop offset="100%" stop-color="#764ba2"/>
+    </linearGradient>
+    <radialGradient id="coin" cx="32%" cy="28%" r="75%">
+      <stop offset="0%" stop-color="#fcf3cf"/>
+      <stop offset="35%" stop-color="#f4d03f"/>
+      <stop offset="100%" stop-color="#9a7d0a"/>
+    </radialGradient>
+    <radialGradient id="coin2" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#fdebd0"/>
+      <stop offset="40%" stop-color="#e8b923"/>
+      <stop offset="100%" stop-color="#7d6608"/>
+    </radialGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <!-- shadow under stack -->
+  <ellipse cx="16" cy="24.5" rx="9" ry="2" fill="#000" opacity="0.2"/>
+  <!-- bottom coin (widest) -->
+  <ellipse cx="16" cy="21" rx="8.5" ry="2.4" fill="#6c5a0a" opacity="0.45"/>
+  <circle cx="16" cy="18.5" r="7" fill="url(#coin2)"/>
+  <ellipse cx="16" cy="15.5" rx="7" ry="1.3" fill="#fff" opacity="0.22"/>
+  <!-- middle coin -->
+  <ellipse cx="16" cy="16" rx="7.5" ry="2.2" fill="#5d4e08" opacity="0.35"/>
+  <circle cx="16" cy="13.5" r="6.2" fill="url(#coin)"/>
+  <ellipse cx="16" cy="11.2" rx="6.2" ry="1.15" fill="#fff" opacity="0.28"/>
+  <!-- top coin -->
+  <ellipse cx="16" cy="11.5" rx="6.5" ry="2" fill="#4a3d06" opacity="0.3"/>
+  <circle cx="16" cy="9" r="5.2" fill="url(#coin)"/>
+  <ellipse cx="16" cy="7.2" rx="5.2" ry="1" fill="#fff" opacity="0.35"/>
+</svg>
