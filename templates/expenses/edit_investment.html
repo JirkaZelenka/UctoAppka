@@ -9,19 +9,22 @@
         <div class="card mb-4">
             <div class="card-header">
                 <h4 class="mb-0">
-                    <i class="bi bi-pencil"></i> Upravit název a poznámku
+                    <i class="bi bi-pencil"></i> Upravit tento záznam
                 </h4>
             </div>
             <div class="card-body">
+                {% if observation_to_edit %}
                 <form method="post">
                     {% csrf_token %}
+                    <input type="hidden" name="update_observation" value="1">
+                    <input type="hidden" name="observation_id" value="{{ observation_to_edit.pk }}">
                     <div class="mb-3">
-                        <label class="form-label">{{ form.name.label }}</label>
-                        {{ form.name }}
+                        <label class="form-label">{{ edit_form.observed_value.label }}</label>
+                        {{ edit_form.observed_value }}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">{{ form.note.label }}</label>
-                        {{ form.note }}
+                        <label class="form-label">{{ edit_form.observation_date.label }}</label>
+                        {{ edit_form.observation_date }}
                     </div>
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary">
@@ -29,102 +32,38 @@
                         </button>
                     </div>
                 </form>
+                {% else %}
+                <p class="text-muted mb-0">Tato investiční skupina zatím nemá žádný záznam pro úpravu.</p>
+                {% endif %}
             </div>
         </div>
 
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0">
-                    <i class="bi bi-graph-up"></i> Aktualizovat pozorovanou hodnotu
+                    <i class="bi bi-plus-circle"></i> Přidat pozorování
                 </h4>
             </div>
             <div class="card-body">
                 <form method="post">
                     {% csrf_token %}
-                    <input type="hidden" name="update_value" value="1">
+                    <input type="hidden" name="add_observation" value="1">
                     <div class="mb-3">
-                        <label class="form-label">{{ value_form.observed_value.label }}</label>
-                        {{ value_form.observed_value }}
-                        <small class="form-text text-muted">Zadejte aktuální pozorovanou hodnotu investice</small>
+                        <label class="form-label">{{ add_form.observed_value.label }}</label>
+                        {{ add_form.observed_value }}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">{{ value_form.observed_value_date.label }}</label>
-                        {{ value_form.observed_value_date }}
-                        <small class="form-text text-muted">Datum, ke kterému se hodnota vztahuje</small>
+                        <label class="form-label">{{ add_form.observation_date.label }}</label>
+                        {{ add_form.observation_date }}
                     </div>
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-success">
-                            <i class="bi bi-save"></i> Aktualizovat hodnotu
+                            <i class="bi bi-save"></i> Přidat pozorování
                         </button>
                     </div>
                 </form>
             </div>
         </div>
-    </div>
-
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h4 class="mb-0">
-                    <i class="bi bi-info-circle"></i> Informace o investiční skupině
-                </h4>
-            </div>
-            <div class="card-body">
-                <h5>{{ investment.name }}</h5>
-                <hr>
-                <p><strong>Investováno (součet transakcí):</strong> {{ investment.invested_amount|czech_int }} Kč</p>
-                {% if investment.observed_value %}
-                    <p><strong>Pozorovaná hodnota:</strong> {{ investment.observed_value|czech_int }} Kč</p>
-                    <p><strong>Datum pozorování:</strong> {{ investment.observed_value_date|date:"d.m.Y" }}</p>
-                    {% if investment.profit_loss is not None %}
-                        <p><strong>Zisk/Ztráta:</strong> 
-                            <span class="{% if investment.profit_loss >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ investment.profit_loss|czech_int }} Kč
-                                ({{ investment.profit_loss_percent|floatformat:2 }}%)
-                            </span>
-                        </p>
-                    {% endif %}
-                {% else %}
-                    <p class="text-muted">Pozorovaná hodnota nebyla zadána</p>
-                {% endif %}
-                <hr>
-                <a href="{% url 'investments' %}" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left"></i> Zpět na přehled
-                </a>
-            </div>
-        </div>
-
-        {% if investment_transactions %}
-        <div class="card mt-4">
-            <div class="card-header">
-                <h4 class="mb-0">
-                    <i class="bi bi-list-ul"></i> Transakce v této skupině
-                </h4>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Datum</th>
-                                <th>Popis</th>
-                                <th>Částka</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for transaction in investment_transactions %}
-                            <tr>
-                                <td>{{ transaction.date|date:"d.m.Y" }}</td>
-                                <td>{{ transaction.description }}</td>
-                                <td><strong>{{ transaction.amount|czech_int }} Kč</strong></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        {% endif %}
     </div>
 </div>
 {% endblock %}

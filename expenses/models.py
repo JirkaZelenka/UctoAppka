@@ -175,21 +175,52 @@ class Investment(models.Model):
             total=Sum('amount')
         )['total']
         return total or Decimal('0')
+
+    @property
+    def latest_observation(self):
+        """Nejnovější pozorování podle data a času vytvoření."""
+        return self.observations.order_by('-observation_date', '-created_at').first()
     
     @property
     def profit_loss(self):
         """Zisk/ztráta"""
-        if self.observed_value:
-            return self.observed_value - self.invested_amount
+        latest = self.latest_observation
+        value = latest.observed_value if latest else self.observed_value
+        if value:
+            return value - self.invested_amount
         return None
     
     @property
     def profit_loss_percent(self):
         """Zisk/ztráta v procentech"""
         invested = self.invested_amount
-        if self.observed_value and invested:
-            return ((self.observed_value - invested) / invested) * 100
+        latest = self.latest_observation
+        value = latest.observed_value if latest else self.observed_value
+        if value and invested:
+            return ((value - invested) / invested) * 100
         return None
+
+
+class InvestmentObservation(models.Model):
+    """Historie pozorovaných hodnot investiční skupiny."""
+    investment = models.ForeignKey(
+        Investment,
+        on_delete=models.CASCADE,
+        related_name='observations',
+        verbose_name="Investiční skupina",
+    )
+    observed_value = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Pozorovaná hodnota")
+    observation_date = models.DateField(verbose_name="Datum pozorované hodnoty")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Pozorování investice"
+        verbose_name_plural = "Pozorování investic"
+        ordering = ['-observation_date', '-created_at']
+
+    def __str__(self):
+        return f"{self.investment.name} - {self.observed_value} Kč ({self.observation_date})"
 
 
 class BudgetLimit(models.Model):

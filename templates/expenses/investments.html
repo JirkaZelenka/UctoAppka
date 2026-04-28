@@ -42,35 +42,7 @@
 </div>
 
 <div class="row">
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-header">
-                <h4 class="mb-0">
-                    <i class="bi bi-plus-circle"></i> Vytvořit investiční skupinu
-                </h4>
-            </div>
-            <div class="card-body">
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="add_investment" value="1">
-                    <div class="mb-3">
-                        <label class="form-label">{{ form.name.label }}</label>
-                        {{ form.name }}
-                        <small class="form-text text-muted">Vytvořte investiční skupinu. Jednotlivé transakce přidávejte na stránce transakcí.</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">{{ form.note.label }}</label>
-                        {{ form.note }}
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-save"></i> Vytvořit investiční skupinu
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-8">
+    <div class="col-md-12">
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0">
@@ -92,48 +64,78 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for investment in investments %}
-                            <tr>
-                                <td><strong>{{ investment.name }}</strong></td>
-                                <td><strong>{{ investment.invested_amount|czech_int }} Kč</strong></td>
+                            {% for row in investment_rows %}
+                            <tr class="investment-row {% if row.observations %}clickable-investment-row{% endif %}" {% if row.observations %}data-target-id="observations-{{ row.investment.pk }}"{% endif %}>
+                                <td><strong>{{ row.investment.name }}</strong></td>
+                                <td><strong>{{ row.investment.invested_amount|czech_int }} Kč</strong></td>
                                 <td>
-                                    {% if investment.observed_value %}
-                                        {{ investment.observed_value|czech_int }} Kč
+                                    {% if row.observed_value %}
+                                        {{ row.observed_value|czech_int }} Kč
                                     {% else %}
                                         <span class="text-muted">Neuvedeno</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if investment.observed_value_date %}
-                                        {{ investment.observed_value_date|date:"d.m.Y" }}
+                                    {% if row.observed_value_date %}
+                                        {{ row.observed_value_date|date:"d.m.Y" }}
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if investment.profit_loss is not None %}
-                                        <span class="{% if investment.profit_loss >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                            {{ investment.profit_loss|czech_int }} Kč
+                                    {% if row.profit_loss is not None %}
+                                        <span class="{% if row.profit_loss >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                            {{ row.profit_loss|czech_int }} Kč
                                         </span>
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if investment.profit_loss_percent is not None %}
-                                        <span class="{% if investment.profit_loss_percent >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                            {{ investment.profit_loss_percent|floatformat:2 }}%
+                                    {% if row.profit_loss_percent is not None %}
+                                        <span class="{% if row.profit_loss_percent >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                            {{ row.profit_loss_percent|floatformat:2 }}%
                                         </span>
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <a href="{% url 'edit_investment' investment.pk %}" class="btn btn-sm btn-outline-primary">
-                                        <i class="bi bi-pencil"></i> Upravit
+                                    <a href="{% url 'edit_investment' row.investment.pk %}" class="btn btn-sm btn-outline-success" title="Přidat pozorování">
+                                        <i class="bi bi-plus-lg"></i>
                                     </a>
                                 </td>
                             </tr>
+                            {% if row.observations %}
+                            <tr id="observations-{{ row.investment.pk }}" class="observation-details-row d-none">
+                                <td colspan="7">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Pozorovaná hodnota</th>
+                                                    <th>Datum pozorování</th>
+                                                    <th>Akce</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for observation in row.observations %}
+                                                <tr>
+                                                    <td>{{ observation.observed_value|czech_int }} Kč</td>
+                                                    <td>{{ observation.observation_date|date:"d.m.Y" }}</td>
+                                                    <td>
+                                                        <a href="{% url 'edit_investment' row.investment.pk %}?observation_id={{ observation.pk }}" class="btn btn-sm btn-outline-primary">
+                                                            <i class="bi bi-pencil"></i> Upravit
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endif %}
                             {% empty %}
                             <tr>
                                 <td colspan="7" class="text-center text-muted">Žádné investiční skupiny</td>
@@ -146,5 +148,33 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<style>
+.clickable-investment-row {
+    cursor: pointer;
+}
+
+.clickable-investment-row:hover > td {
+    background-color: #f0f7ff;
+}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const rows = document.querySelectorAll('.clickable-investment-row');
+    rows.forEach(function (row) {
+        row.addEventListener('click', function (event) {
+            if (event.target.closest('a, button')) {
+                return;
+            }
+            const targetId = row.getAttribute('data-target-id');
+            const detailsRow = document.getElementById(targetId);
+            if (!detailsRow) return;
+            detailsRow.classList.toggle('d-none');
+        });
+    });
+});
+</script>
 {% endblock %}
 

@@ -26,7 +26,7 @@ except ImportError:
 
 from .models import (
     Transaction, Category, Subcategory, RecurringPayment,
-    Investment, BudgetLimit, TransactionType, PaymentFor
+    Investment, InvestmentObservation, BudgetLimit, TransactionType, PaymentFor
 )
 from .forms import TransactionForm, CategoryForm, SubcategoryForm, InvestmentForm, InvestmentValueForm, RecurringPaymentForm
 
@@ -943,10 +943,35 @@ def create_transaction_from_recurring(request, pk):
 def investments(request):
     """Přehled investičních skupin"""
     investments_list = Investment.objects.all().order_by('-created_at')
-    
-    # Vypočítat celkové hodnoty z property metod
-    total_invested = sum([inv.invested_amount for inv in investments_list])
-    total_current = sum([inv.observed_value or Decimal('0') for inv in investments_list])
+    investment_rows = []
+
+    # Vypočítat celkové hodnoty z nejnovějších pozorování
+    total_invested = Decimal('0')
+    total_current = Decimal('0')
+
+    for inv in investments_list:
+        observations = list(inv.observations.all().order_by('-observation_date', '-created_at'))
+        latest_observation = observations[0] if observations else None
+        current_value = latest_observation.observed_value if latest_observation else (inv.observed_value or Decimal('0'))
+        current_value_date = latest_observation.observation_date if latest_observation else inv.observed_value_date
+        invested_amount = inv.invested_amount
+        profit_loss = current_value - invested_amount if current_value else None
+        profit_loss_percent = ((current_value - invested_amount) / invested_amount) * 100 if current_value and invested_amount else None
+
+        total_invested += invested_amount
+        total_current += current_value
+
+        investment_rows.append({
+            'investment': inv,
+            'observations': observations,
+            'latest_observation': latest_observation,
+            'observed_value': current_value if current_value else None,
+            'observed_value_date': current_value_date,
+            'profit_loss': profit_loss,
+            'profit_loss_percent': profit_loss_percent,
+            'has_more_observations': len(observations) > 1,
+        })
+
     total_profit_loss = total_current - total_invested
     
     # Get all investment transactions to calculate split
@@ -968,21 +993,8 @@ def investments(request):
     total_profit_loss_user1 = total_profit_loss * user1_ratio
     total_profit_loss_user2 = total_profit_loss * user2_ratio
     
-    if request.method == 'POST':
-        if 'add_investment' in request.POST:
-            form = InvestmentForm(request.POST)
-            if form.is_valid():
-                form.save()
-                messages.success(request, 'Investiční skupina byla přidána.')
-                return redirect('investments')
-        else:
-            form = InvestmentForm()
-    else:
-        form = InvestmentForm()
-    
     context = {
-        'investments': investments_list,
-        'form': form,
+        'investment_rows': investment_rows,
         'total_invested': total_invested,
         'total_current': total_current,
         'total_profit_loss': total_profit_loss,
@@ -999,36 +1011,54 @@ def investments(request):
 
 @login_required
 def edit_investment(request, pk):
-    """Editace investiční skupiny - název, poznámka a pozorovaná hodnota"""
+    """Editace konkrétního záznamu pozorování + přidání nového pozorování."""
     investment = get_object_or_404(Investment, pk=pk)
-    
-    if request.method == 'POST':
-        if 'update_value' in request.POST:
-            # Aktualizace pouze pozorované hodnoty
-            value_form = InvestmentValueForm(request.POST, instance=investment)
-            if value_form.is_valid():
-                value_form.save()
-                messages.success(request, 'Pozorovaná hodnota byla aktualizována.')
-                return redirect('investments')
-        else:
-            # Aktualizace názvu a poznámky
-            form = InvestmentForm(request.POST, instance=investment)
-            if form.is_valid():
-                form.save()
-                messages.success(request, 'Investiční skupina byla upravena.')
-                return redirect('investments')
+    latest_observation = investment.observations.order_by('-observation_date', '-created_at').first()
+    observation_id = request.GET.get('observation_id') or request.POST.get('observation_id')
+    if observation_id:
+        observation_to_edit = get_object_or_404(InvestmentObservation, pk=observation_id, investment=investment)
     else:
-        form = InvestmentForm(instance=investment)
-        value_form = InvestmentValueForm(instance=investment)
-    
-    # Získat transakce spojené s touto investicí
-    investment_transactions = investment.transactions.filter(transaction_type=TransactionType.INVESTMENT).order_by('-date')
-    
+        observation_to_edit = latest_observation
+
+    def sync_latest_observation_fields(target_investment):
+        latest_observation = target_investment.observations.order_by('-observation_date', '-created_at').first()
+        if latest_observation:
+            target_investment.observed_value = latest_observation.observed_value
+            target_investment.observed_value_date = latest_observation.observation_date
+        else:
+            target_investment.observed_value = None
+            target_investment.observed_value_date = None
+        target_investment.save(update_fields=['observed_value', 'observed_value_date', 'updated_at'])
+
+    edit_form = InvestmentValueForm(instance=observation_to_edit)
+    add_form = InvestmentValueForm()
+
+    if request.method == 'POST':
+        if 'update_observation' in request.POST:
+            if not observation_to_edit:
+                messages.error(request, 'Není vybraný záznam k úpravě.')
+                return redirect('edit_investment', pk=investment.pk)
+            edit_form = InvestmentValueForm(request.POST, instance=observation_to_edit)
+            if edit_form.is_valid():
+                edit_form.save()
+                sync_latest_observation_fields(investment)
+                messages.success(request, 'Záznam pozorování byl upraven.')
+                return redirect(f"{reverse('edit_investment', kwargs={'pk': investment.pk})}?observation_id={observation_to_edit.pk}")
+        elif 'add_observation' in request.POST:
+            add_form = InvestmentValueForm(request.POST)
+            if add_form.is_valid():
+                new_observation = add_form.save(commit=False)
+                new_observation.investment = investment
+                new_observation.save()
+                sync_latest_observation_fields(investment)
+                messages.success(request, 'Nové pozorování bylo přidáno.')
+                return redirect(f"{reverse('edit_investment', kwargs={'pk': investment.pk})}?observation_id={new_observation.pk}")
+
     return render(request, 'expenses/edit_investment.html', {
-        'form': form, 
-        'value_form': value_form,
+        'edit_form': edit_form,
+        'add_form': add_form,
         'investment': investment,
-        'investment_transactions': investment_transactions,
+        'observation_to_edit': observation_to_edit,
     })
 
 
@@ -1039,6 +1069,7 @@ def settings(request):
     subcategories = Subcategory.objects.select_related('category').all()
     category_form = CategoryForm()
     subcategory_form = SubcategoryForm()
+    investment_form = InvestmentForm()
     
     # Hledání anomálií
     anomalies = []
@@ -1089,12 +1120,19 @@ def settings(request):
                 subcategory_form.save()
                 messages.success(request, 'Subkategorie byla přidána.')
                 return redirect('settings')
+        elif 'add_investment' in request.POST:
+            investment_form = InvestmentForm(request.POST)
+            if investment_form.is_valid():
+                investment_form.save()
+                messages.success(request, 'Investiční skupina byla přidána.')
+                return redirect('settings')
     
     context = {
         'categories': categories,
         'subcategories': subcategories,
         'category_form': category_form,
         'subcategory_form': subcategory_form,
+        'investment_form': investment_form,
         'anomalies': anomalies[:20],  # Limit na 20 anomálií
     }
     

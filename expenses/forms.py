@@ -2,7 +2,7 @@ from django import forms
 from django.utils import timezone
 from datetime import date
 from .models import (
-    Transaction, Category, Subcategory, Investment, 
+    Transaction, Category, Subcategory, Investment, InvestmentObservation,
     RecurringPayment, TransactionType, PaymentFor
 )
 
@@ -189,15 +189,15 @@ class InvestmentForm(forms.ModelForm):
 class InvestmentValueForm(forms.ModelForm):
     """Formulář pro aktualizaci pozorované hodnoty investice"""
     class Meta:
-        model = Investment
-        fields = ['observed_value', 'observed_value_date']
+        model = InvestmentObservation
+        fields = ['observed_value', 'observation_date']
         widgets = {
             'observed_value': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'observed_value_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'observation_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
         }
         labels = {
             'observed_value': 'Pozorovaná hodnota (Kč)',
-            'observed_value_date': 'Datum pozorované hodnoty',
+            'observation_date': 'Datum pozorované hodnoty',
         }
 
 
