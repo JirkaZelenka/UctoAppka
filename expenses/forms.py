@@ -175,13 +175,15 @@ class SubcategoryForm(forms.ModelForm):
 class InvestmentForm(forms.ModelForm):
     class Meta:
         model = Investment
-        fields = ['name', 'note']
+        fields = ['name', 'owner', 'note']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'owner': forms.Select(attrs={'class': 'form-control'}),
             'note': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
         labels = {
             'name': 'Název investiční skupiny',
+            'owner': 'Vlastník',
             'note': 'Poznámka',
         }
 
@@ -193,12 +195,16 @@ class InvestmentValueForm(forms.ModelForm):
         fields = ['observed_value', 'observation_date']
         widgets = {
             'observed_value': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'observation_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'observation_date': forms.DateInput(format='%Y-%m-%d', attrs={'class': 'form-control', 'type': 'date'}),
         }
         labels = {
             'observed_value': 'Pozorovaná hodnota (Kč)',
             'observation_date': 'Datum pozorované hodnoty',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['observation_date'].input_formats = ['%Y-%m-%d']
 
 
 class RecurringPaymentForm(forms.ModelForm):

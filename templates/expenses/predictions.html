@@ -29,8 +29,8 @@
                             <div class="stat-label">Očekávané příjmy</div>
                             <div class="stat-value income">{{ expected_income|czech_int }} Kč</div>
                             <div class="stat-split">
-                                <div class="stat-split-left" data-label="Uživatel 1">{{ expected_income_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="Uživatel 2">{{ expected_income_user2|czech_int }} Kč</div>
+                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ expected_income_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ expected_income_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>
@@ -41,8 +41,8 @@
                             <div class="stat-label">Očekávané výdaje</div>
                             <div class="stat-value expense">{{ expected_expenses|czech_int }} Kč</div>
                             <div class="stat-split">
-                                <div class="stat-split-left" data-label="Uživatel 1">{{ expected_expenses_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="Uživatel 2">{{ expected_expenses_user2|czech_int }} Kč</div>
+                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ expected_expenses_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ expected_expenses_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>
@@ -66,8 +66,8 @@
                             <div class="stat-label">Skutečné příjmy</div>
                             <div class="stat-value income">{{ actual_income|czech_int }} Kč</div>
                             <div class="stat-split">
-                                <div class="stat-split-left" data-label="Uživatel 1">{{ actual_income_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="Uživatel 2">{{ actual_income_user2|czech_int }} Kč</div>
+                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ actual_income_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ actual_income_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>
@@ -78,8 +78,8 @@
                             <div class="stat-label">Skutečné výdaje</div>
                             <div class="stat-value expense">{{ actual_expenses|czech_int }} Kč</div>
                             <div class="stat-split">
-                                <div class="stat-split-left" data-label="Uživatel 1">{{ actual_expenses_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="Uživatel 2">{{ actual_expenses_user2|czech_int }} Kč</div>
+                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ actual_expenses_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ actual_expenses_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>

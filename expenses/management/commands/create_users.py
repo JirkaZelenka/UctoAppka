@@ -7,11 +7,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Vytvoření prvního uživatele
-        username1 = 'user1'
+        username1 = 'jirka'
         if not User.objects.filter(username=username1).exists():
             user1 = User.objects.create_user(
                 username=username1,
-                email='user1@example.com',
+                email='jirka@example.com',
                 password='change_me_123'  # Uživatel by měl změnit heslo po prvním přihlášení
             )
             self.stdout.write(
@@ -23,11 +23,11 @@ class Command(BaseCommand):
             )
 
         # Vytvoření druhého uživatele
-        username2 = 'user2'
+        username2 = 'zuzka'
         if not User.objects.filter(username=username2).exists():
             user2 = User.objects.create_user(
                 username=username2,
-                email='user2@example.com',
+                email='zuzka@example.com',
                 password='change_me_123'  # Uživatel by měl změnit heslo po prvním přihlášení
             )
             self.stdout.write(

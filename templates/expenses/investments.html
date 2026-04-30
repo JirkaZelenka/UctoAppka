@@ -10,8 +10,8 @@
             <div class="stat-label">Celkem investováno</div>
             <div class="stat-value investment">{{ total_invested|czech_int }} Kč</div>
             <div class="stat-split">
-                <div class="stat-split-left" data-label="Uživatel 1">{{ total_invested_user1|czech_int }} Kč</div>
-                <div class="stat-split-right" data-label="Uživatel 2">{{ total_invested_user2|czech_int }} Kč</div>
+                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ total_invested_user1|czech_int }} Kč</div>
+                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ total_invested_user2|czech_int }} Kč</div>
             </div>
         </div>
     </div>
@@ -22,8 +22,8 @@
                     {{ total_current|czech_int }} Kč
                 </div>
                 <div class="stat-split">
-                    <div class="stat-split-left" data-label="Uživatel 1">{{ total_current_user1|czech_int }} Kč</div>
-                    <div class="stat-split-right" data-label="Uživatel 2">{{ total_current_user2|czech_int }} Kč</div>
+                    <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ total_current_user1|czech_int }} Kč</div>
+                    <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ total_current_user2|czech_int }} Kč</div>
                 </div>
             </div>
     </div>
@@ -34,8 +34,8 @@
                 {{ total_profit_loss|czech_int }} Kč
             </div>
             <div class="stat-split">
-                <div class="stat-split-left" data-label="Uživatel 1">{{ total_profit_loss_user1|czech_int }} Kč</div>
-                <div class="stat-split-right" data-label="Uživatel 2">{{ total_profit_loss_user2|czech_int }} Kč</div>
+                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ total_profit_loss_user1|czech_int }} Kč</div>
+                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ total_profit_loss_user2|czech_int }} Kč</div>
             </div>
         </div>
     </div>
@@ -54,19 +54,27 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>Název skupiny</th>
-                                <th>Investováno (součet transakcí)</th>
-                                <th>Pozorovaná hodnota</th>
-                                <th>Datum pozorování</th>
-                                <th>Zisk/Ztráta</th>
-                                <th>%</th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=name&order={% if sort_by == 'name' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Název skupiny {% if sort_by == 'name' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=owner&order={% if sort_by == 'owner' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Vlastník {% if sort_by == 'owner' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=invested&order={% if sort_by == 'invested' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Investováno {% if sort_by == 'invested' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=observed&order={% if sort_by == 'observed' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Pozorovaná hodnota {% if sort_by == 'observed' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=date&order={% if sort_by == 'date' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Datum pozorování {% if sort_by == 'date' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=profit&order={% if sort_by == 'profit' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Zisk/Ztráta {% if sort_by == 'profit' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=percent&order={% if sort_by == 'percent' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">% {% if sort_by == 'percent' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
                                 <th>Akce</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for row in investment_rows %}
-                            <tr class="investment-row {% if row.observations %}clickable-investment-row{% endif %}" {% if row.observations %}data-target-id="observations-{{ row.investment.pk }}"{% endif %}>
+                            <tr class="investment-row {{ row.owner_row_class }} {% if row.observations %}clickable-investment-row{% endif %}" {% if row.observations %}data-target-class="observations-{{ row.investment.pk }}"{% endif %}>
                                 <td><strong>{{ row.investment.name }}</strong></td>
+                                <td>
+                                    {% if row.investment.owner %}
+                                        <span class="badge {{ row.owner_badge_class }}">{{ row.investment.owner.username }}</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
                                 <td><strong>{{ row.investment.invested_amount|czech_int }} Kč</strong></td>
                                 <td>
                                     {% if row.observed_value %}
@@ -107,38 +115,26 @@
                                 </td>
                             </tr>
                             {% if row.observations %}
-                            <tr id="observations-{{ row.investment.pk }}" class="observation-details-row d-none">
-                                <td colspan="7">
-                                    <div class="table-responsive">
-                                        <table class="table table-sm mb-0">
-                                            <thead>
-                                                <tr>
-                                                    <th>Pozorovaná hodnota</th>
-                                                    <th>Datum pozorování</th>
-                                                    <th>Akce</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {% for observation in row.observations %}
-                                                <tr>
-                                                    <td>{{ observation.observed_value|czech_int }} Kč</td>
-                                                    <td>{{ observation.observation_date|date:"d.m.Y" }}</td>
-                                                    <td>
-                                                        <a href="{% url 'edit_investment' row.investment.pk %}?observation_id={{ observation.pk }}" class="btn btn-sm btn-outline-primary">
-                                                            <i class="bi bi-pencil"></i> Upravit
-                                                        </a>
-                                                    </td>
-                                                </tr>
-                                                {% endfor %}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                {% for observation in row.observations %}
+                            <tr class="observation-details-row observations-{{ row.investment.pk }} d-none">
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td><strong>{{ observation.observed_value|czech_int }} Kč</strong></td>
+                                <td>{{ observation.observation_date|date:"d.m.Y" }}</td>
+                                <td></td>
+                                <td></td>
+                                <td>
+                                    <a href="{% url 'edit_investment' row.investment.pk %}?observation_id={{ observation.pk }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-pencil"></i> Upravit
+                                    </a>
                                 </td>
                             </tr>
+                                {% endfor %}
                             {% endif %}
                             {% empty %}
                             <tr>
-                                <td colspan="7" class="text-center text-muted">Žádné investiční skupiny</td>
+                                <td colspan="8" class="text-center text-muted">Žádné investiční skupiny</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -156,8 +152,39 @@
     cursor: pointer;
 }
 
-.clickable-investment-row:hover > td {
-    background-color: #f0f7ff;
+.owner-jirka-row > td {
+    background-color: #e6d0b3;
+}
+
+.owner-zuzka-row > td {
+    background-color: #fff3bf;
+}
+
+.owner-jirka-row.clickable-investment-row:hover > td {
+    background-color: #c9a86c;
+}
+
+.owner-zuzka-row.clickable-investment-row:hover > td {
+    background-color: #f0c14b;
+}
+
+.clickable-investment-row:not(.owner-jirka-row):not(.owner-zuzka-row):hover > td {
+    background-color: #e9ecef;
+}
+
+.owner-badge-jirka {
+    background-color: #6d4c41;
+    color: #fff;
+}
+
+.owner-badge-zuzka {
+    background-color: #d4af37;
+    color: #2c2416;
+}
+
+.owner-badge-default {
+    background-color: #6c757d;
+    color: #fff;
 }
 </style>
 <script>
@@ -168,10 +195,12 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target.closest('a, button')) {
                 return;
             }
-            const targetId = row.getAttribute('data-target-id');
-            const detailsRow = document.getElementById(targetId);
-            if (!detailsRow) return;
-            detailsRow.classList.toggle('d-none');
+            const targetClass = row.getAttribute('data-target-class');
+            if (!targetClass) return;
+            const detailsRows = document.querySelectorAll('.' + targetClass);
+            detailsRows.forEach(function (detailsRow) {
+                detailsRow.classList.toggle('d-none');
+            });
         });
     });
 });

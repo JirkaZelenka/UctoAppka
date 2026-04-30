@@ -4,6 +4,7 @@ import subprocess
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from django.contrib import messages
 from django.db.models import Sum, Q, Count, Avg, Min, Max
 from django.utils import timezone
@@ -139,6 +140,25 @@ def calculate_split_amounts(transactions):
     return user1_total, user2_total
 
 
+def get_split_user_labels():
+    """Display labels for the SELF/PARTNER split cards."""
+    preferred_order = ['jirka', 'zuzka']
+    usernames = list(
+        User.objects.filter(username__in=preferred_order)
+        .order_by('id')
+        .values_list('username', flat=True)
+    )
+    ordered = [name for name in preferred_order if name in usernames]
+    if len(ordered) < 2:
+        fallback = list(
+            User.objects.exclude(username='admin')
+            .order_by('id')
+            .values_list('username', flat=True)[:2]
+        )
+        ordered = fallback if len(fallback) == 2 else ['jirka', 'zuzka']
+    return ordered[0], ordered[1]
+
+
 @login_required
 def dashboard(request):
     """Měsíční dashboard"""
@@ -233,6 +253,8 @@ def dashboard(request):
     
     categories = Category.objects.all()
     
+    split_user1_label, split_user2_label = get_split_user_labels()
+
     context = {
         'transactions': recent_transactions,
         'income': income,
@@ -254,6 +276,8 @@ def dashboard(request):
         'category_filter': category_filter,
         'sort_by': sort_by,
         'sort_order': sort_order,
+        'split_user1_label': split_user1_label,
+        'split_user2_label': split_user2_label,
     }
     
     return render(request, 'expenses/dashboard.html', context)
@@ -705,6 +729,8 @@ def predictions(request):
     }
     current_month_name = month_names.get(today.month, '')
     
+    split_user1_label, split_user2_label = get_split_user_labels()
+
     context = {
         'expected_income': expected_income,
         'expected_expenses': expected_expenses,
@@ -723,6 +749,8 @@ def predictions(request):
         'current_year': today.year,
         'today': today,
         'current_month_end': current_month_end,
+        'split_user1_label': split_user1_label,
+        'split_user2_label': split_user2_label,
     }
     
     return render(request, 'expenses/predictions.html', context)
@@ -942,12 +970,21 @@ def create_transaction_from_recurring(request, pk):
 @login_required
 def investments(request):
     """Přehled investičních skupin"""
-    investments_list = Investment.objects.all().order_by('-created_at')
+    investments_list = Investment.objects.select_related('owner').all().order_by('-created_at')
     investment_rows = []
+    sort_by = request.GET.get('sort', 'name')
+    sort_order = request.GET.get('order', 'asc')
+    if sort_order not in ['asc', 'desc']:
+        sort_order = 'asc'
 
     # Vypočítat celkové hodnoty z nejnovějších pozorování
     total_invested = Decimal('0')
     total_current = Decimal('0')
+    split_user1_label, split_user2_label = get_split_user_labels()
+    total_invested_user1 = Decimal('0')
+    total_invested_user2 = Decimal('0')
+    total_current_user1 = Decimal('0')
+    total_current_user2 = Decimal('0')
 
     for inv in investments_list:
         observations = list(inv.observations.all().order_by('-observation_date', '-created_at'))
@@ -961,10 +998,29 @@ def investments(request):
         total_invested += invested_amount
         total_current += current_value
 
+        # Rozdělení statistik podle vlastníka investiční skupiny.
+        # Fallback: pokud owner není vyplněný, použij uživatele, který zapsal
+        # nejnovější investiční transakci v dané skupině.
+        owner_username = (inv.owner.username if inv.owner else '').lower() if inv.owner else ''
+        if not owner_username:
+            owner_tx = inv.transactions.filter(
+                transaction_type=TransactionType.INVESTMENT
+            ).exclude(created_by__isnull=True).order_by('-created_at').first()
+            owner_username = (owner_tx.created_by.username or '').lower() if owner_tx and owner_tx.created_by else ''
+
+        if owner_username == split_user1_label.lower():
+            total_invested_user1 += invested_amount
+            total_current_user1 += current_value
+        elif owner_username == split_user2_label.lower():
+            total_invested_user2 += invested_amount
+            total_current_user2 += current_value
+
         investment_rows.append({
             'investment': inv,
+            'owner_name': inv.owner.username if inv.owner else '',
             'observations': observations,
             'latest_observation': latest_observation,
+            'invested_amount': invested_amount,
             'observed_value': current_value if current_value else None,
             'observed_value_date': current_value_date,
             'profit_loss': profit_loss,
@@ -972,26 +1028,45 @@ def investments(request):
             'has_more_observations': len(observations) > 1,
         })
 
-    total_profit_loss = total_current - total_invested
-    
-    # Get all investment transactions to calculate split
-    investment_transactions = Transaction.objects.filter(
-        transaction_type=TransactionType.INVESTMENT
+    sort_key_map = {
+        'name': lambda row: (row['investment'].name or '').lower(),
+        'owner': lambda row: (row['owner_name'] or '').lower(),
+        'invested': lambda row: row['invested_amount'] or Decimal('0'),
+        'observed': lambda row: row['observed_value'] or Decimal('0'),
+        'date': lambda row: row['observed_value_date'] or datetime.min.date(),
+        'profit': lambda row: row['profit_loss'] or Decimal('0'),
+        'percent': lambda row: row['profit_loss_percent'] or Decimal('0'),
+    }
+    if sort_by not in sort_key_map:
+        sort_by = 'name'
+    investment_rows = sorted(
+        investment_rows,
+        key=sort_key_map[sort_by],
+        reverse=(sort_order == 'desc')
     )
-    total_invested_user1, total_invested_user2 = calculate_split_amounts(investment_transactions)
-    
-    # Split total_current and total_profit_loss proportionally based on invested amounts
-    if total_invested > 0:
-        user1_ratio = total_invested_user1 / total_invested
-        user2_ratio = total_invested_user2 / total_invested
-    else:
-        user1_ratio = Decimal('0.5')
-        user2_ratio = Decimal('0.5')
-    
-    total_current_user1 = total_current * user1_ratio
-    total_current_user2 = total_current * user2_ratio
-    total_profit_loss_user1 = total_profit_loss * user1_ratio
-    total_profit_loss_user2 = total_profit_loss * user2_ratio
+
+    def owner_row_class_from_username(owner_user):
+        if not owner_user:
+            return ''
+        name = (owner_user.username or '').lower()
+        if name == 'zuzka':
+            return 'owner-zuzka-row'
+        if name == 'jirka':
+            return 'owner-jirka-row'
+        return ''
+
+    for row in investment_rows:
+        owner = row['investment'].owner
+        row['owner_row_class'] = owner_row_class_from_username(owner)
+        row['owner_badge_class'] = (
+            'owner-badge-zuzka' if owner and owner.username.lower() == 'zuzka'
+            else 'owner-badge-jirka' if owner and owner.username.lower() == 'jirka'
+            else 'owner-badge-default'
+        )
+
+    total_profit_loss = total_current - total_invested
+    total_profit_loss_user1 = total_current_user1 - total_invested_user1
+    total_profit_loss_user2 = total_current_user2 - total_invested_user2
     
     context = {
         'investment_rows': investment_rows,
@@ -1004,6 +1079,10 @@ def investments(request):
         'total_current_user2': total_current_user2,
         'total_profit_loss_user1': total_profit_loss_user1,
         'total_profit_loss_user2': total_profit_loss_user2,
+        'sort_by': sort_by,
+        'sort_order': sort_order,
+        'split_user1_label': split_user1_label,
+        'split_user2_label': split_user2_label,
     }
     
     return render(request, 'expenses/investments.html', context)
@@ -1030,22 +1109,29 @@ def edit_investment(request, pk):
             target_investment.observed_value_date = None
         target_investment.save(update_fields=['observed_value', 'observed_value_date', 'updated_at'])
 
-    edit_form = InvestmentValueForm(instance=observation_to_edit)
-    add_form = InvestmentValueForm()
+    edit_initial = {}
+    if observation_to_edit:
+        edit_initial['observation_date'] = observation_to_edit.observation_date
+    edit_form = InvestmentValueForm(instance=observation_to_edit, initial=edit_initial)
+    add_form = InvestmentValueForm(initial={'observation_date': timezone.now().date()})
 
     if request.method == 'POST':
         if 'update_observation' in request.POST:
             if not observation_to_edit:
                 messages.error(request, 'Není vybraný záznam k úpravě.')
                 return redirect('edit_investment', pk=investment.pk)
-            edit_form = InvestmentValueForm(request.POST, instance=observation_to_edit)
+            edit_form = InvestmentValueForm(
+                request.POST,
+                instance=observation_to_edit,
+                initial={'observation_date': observation_to_edit.observation_date}
+            )
             if edit_form.is_valid():
                 edit_form.save()
                 sync_latest_observation_fields(investment)
                 messages.success(request, 'Záznam pozorování byl upraven.')
                 return redirect(f"{reverse('edit_investment', kwargs={'pk': investment.pk})}?observation_id={observation_to_edit.pk}")
         elif 'add_observation' in request.POST:
-            add_form = InvestmentValueForm(request.POST)
+            add_form = InvestmentValueForm(request.POST, initial={'observation_date': timezone.now().date()})
             if add_form.is_valid():
                 new_observation = add_form.save(commit=False)
                 new_observation.investment = investment
@@ -1069,7 +1155,7 @@ def settings(request):
     subcategories = Subcategory.objects.select_related('category').all()
     category_form = CategoryForm()
     subcategory_form = SubcategoryForm()
-    investment_form = InvestmentForm()
+    investment_form = InvestmentForm(initial={'owner': request.user})
     
     # Hledání anomálií
     anomalies = []
@@ -1123,7 +1209,10 @@ def settings(request):
         elif 'add_investment' in request.POST:
             investment_form = InvestmentForm(request.POST)
             if investment_form.is_valid():
-                investment_form.save()
+                investment = investment_form.save(commit=False)
+                if not investment.owner:
+                    investment.owner = request.user
+                investment.save()
                 messages.success(request, 'Investiční skupina byla přidána.')
                 return redirect('settings')
     

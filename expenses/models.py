@@ -153,6 +153,14 @@ class RecurringPayment(models.Model):
 class Investment(models.Model):
     """Investiční skupina/typ - pouze název skupiny, transakce se přidávají na stránce transakcí"""
     name = models.CharField(max_length=200, verbose_name="Název investiční skupiny")
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='investments',
+        verbose_name="Vlastník",
+    )
     observed_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Pozorovaná hodnota")
     observed_value_date = models.DateField(null=True, blank=True, verbose_name="Datum pozorované hodnoty")
     note = models.TextField(blank=True, verbose_name="Poznámka")
