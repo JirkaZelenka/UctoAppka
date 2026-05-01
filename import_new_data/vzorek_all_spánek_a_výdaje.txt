@@ -1,0 +1,29 @@
+# Ukázkový výpis — můžeš smazat komentáře začínající #, parser je ignoruje jen pokud celý řádek...
+
+## cokoli — tyto řádky (nadpis, linka) se vytěží prázdně, neexportují
+https://neco.cz/odkaz-ignorovaný
+---
+
+# stejně se ignoruje běžný nadpis až do prvního rozpoznaného data
+ne – po 14.2.
+2:15 2:30 7:30, první den — lehká mlha, káva až po druhé probuzení.
+Druhý řádek deníku před účetními položkami (spojí se s textem i do „denní“ tabulky).
+bez čísla jen poznámka (řádek bez Kč, ale stále ještě než první útrata)
+
+-500 nákup v Albertu
++1200 výplata
+200 drobný příjem
+-123 test částky co není násobek 5
+-250 Společný nákup na chatu
+-300 spolecna večeře
+-100 SPOLECNA káva
+
+3.3.2026
+6:45 7:10 8:00, druhý ukázkový den — kratší spánek, budík stačil.
+Volitelná věta navíc, stejné datum jako hlavička výše.
+
+-1000 nájem
++5000 příjem faktura 12
+-3000 předplatné na 12 měsíců
+-47 divná částka
+-100 jednorázově 1 měsíc

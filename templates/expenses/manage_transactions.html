@@ -85,11 +85,6 @@
                         </a>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <a class="nav-link" id="import-export-tab" data-bs-toggle="tab" data-bs-target="#import-export" href="#import-export" role="tab" aria-controls="import-export" aria-selected="false">
-                            <i class="bi bi-upload"></i> Import/Export
-                        </a>
-                    </li>
-                    <li class="nav-item" role="presentation">
                         <a class="nav-link" id="manage-tab" data-bs-toggle="tab" data-bs-target="#manage" href="#manage" role="tab" aria-controls="manage" aria-selected="false">
                             <i class="bi bi-list-check"></i> Spravuj transakce
                         </a>
@@ -198,83 +193,7 @@
                         </div>
                     </div>
 
-                    <!-- Section 2: Import/Export -->
-                    <div class="tab-pane fade" id="import-export" role="tabpanel">
-                        <div class="row">
-                            <!-- Export Section -->
-                            <div class="col-md-6">
-                                <div class="card mb-4">
-                                    <div class="card-header">
-                                        <h5 class="mb-0">
-                                            <i class="bi bi-download"></i> Export transakcí
-                                        </h5>
-                                    </div>
-                                    <div class="card-body">
-                                        <form method="get" action="{% url 'export_transactions' %}" id="export-form">
-                                            <div class="mb-3">
-                                                <label class="form-label">Datum od</label>
-                                                <input type="date" name="date_from" class="form-control" value="{% if date_range.min_date %}{{ date_range.min_date|date:'Y-m-d' }}{% endif %}" id="export-date-from">
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">Datum do</label>
-                                                <input type="date" name="date_to" class="form-control" value="{% if date_range.max_date %}{{ date_range.max_date|date:'Y-m-d' }}{% endif %}" id="export-date-to">
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">Formát</label>
-                                                <select name="format" class="form-select">
-                                                    <option value="csv">CSV</option>
-                                                    <option value="excel">Excel (.xlsx)</option>
-                                                </select>
-                                            </div>
-                                            <button type="submit" class="btn btn-primary w-100">
-                                                <i class="bi bi-download"></i> Exportovat
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Import Section -->
-                            <div class="col-md-6">
-                                <div class="card mb-4">
-                                    <div class="card-header">
-                                        <h5 class="mb-0">
-                                            <i class="bi bi-upload"></i> Import transakcí
-                                        </h5>
-                                    </div>
-                                    <div class="card-body">
-                                        <form method="post" action="{% url 'import_transactions' %}" enctype="multipart/form-data" id="import-form">
-                                            {% csrf_token %}
-                                            <div class="mb-3">
-                                                <label class="form-label">Vyberte soubor (Excel nebo CSV)</label>
-                                                <input type="file" name="file" class="form-control" accept=".xlsx,.xls,.csv" id="import-file-input" required>
-                                            </div>
-                                            <div class="mb-3">
-                                                <div id="drop-zone" class="border border-dashed border-secondary rounded p-4 text-center" style="min-height: 150px; cursor: pointer;">
-                                                    <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #6c757d;"></i>
-                                                    <p class="mt-2 mb-0">Přetáhněte soubor sem nebo klikněte pro výběr</p>
-                                                    <small class="text-muted">Podporované formáty: .xlsx, .xls, .csv</small>
-                                                </div>
-                                            </div>
-                                            <button type="submit" class="btn btn-success w-100" id="import-submit" disabled>
-                                                <i class="bi bi-upload"></i> Importovat
-                                            </button>
-                                        </form>
-                                        <div class="alert alert-info mt-3">
-                                            <small>
-                                                <strong>Formát souboru:</strong><br>
-                                                Očekávané sloupce: Datum, Popis, Typ, Kategorie, Subkategorie, Částka (Kč), Za koho, Na kolik měsíců, Schváleno, Poznámka<br>
-                                                Datum ve formátu: YYYY-MM-DD<br>
-                                                Typ: Příjem, Výdaj, nebo Investice
-                                            </small>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Section 3: Spravuj transakce -->
+                    <!-- Section 2: Spravuj transakce -->
                     <div class="tab-pane fade" id="manage" role="tabpanel">
                         <!-- Filtry -->
                         <form method="get" class="mb-3">
@@ -528,61 +447,6 @@
                 document.getElementById('add').classList.remove('show', 'active');
                 document.getElementById('manage').classList.add('show', 'active');
             }
-        } else if (tab === 'import-export') {
-            const importExportTab = document.getElementById('import-export-tab');
-            const addTab = document.getElementById('add-tab');
-            if (importExportTab && addTab) {
-                addTab.classList.remove('active');
-                importExportTab.classList.add('active');
-                document.getElementById('add').classList.remove('show', 'active');
-                document.getElementById('import-export').classList.add('show', 'active');
-            }
-        }
-        
-        // Drag and drop for import
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('import-file-input');
-        const importSubmit = document.getElementById('import-submit');
-        
-        if (dropZone && fileInput) {
-            // Click to select file
-            dropZone.addEventListener('click', function() {
-                fileInput.click();
-            });
-            
-            // Update submit button state
-            fileInput.addEventListener('change', function() {
-                importSubmit.disabled = !this.files.length;
-                if (this.files.length) {
-                    dropZone.innerHTML = '<i class="bi bi-file-earmark-check" style="font-size: 3rem; color: #28a745;"></i><p class="mt-2 mb-0">' + this.files[0].name + '</p>';
-                }
-            });
-            
-            // Drag and drop handlers
-            dropZone.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                this.style.backgroundColor = '#e9ecef';
-            });
-            
-            dropZone.addEventListener('dragleave', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                this.style.backgroundColor = '';
-            });
-            
-            dropZone.addEventListener('drop', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                this.style.backgroundColor = '';
-                
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    fileInput.files = files;
-                    importSubmit.disabled = false;
-                    dropZone.innerHTML = '<i class="bi bi-file-earmark-check" style="font-size: 3rem; color: #28a745;"></i><p class="mt-2 mb-0">' + files[0].name + '</p>';
-                }
-            });
         }
 
         const transactionTypeInput = document.getElementById('{{ form.transaction_type.id_for_label }}');

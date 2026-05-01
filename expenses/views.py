@@ -6,24 +6,19 @@ from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib import messages
-from django.db.models import Sum, Q, Count, Avg, Min, Max
+from django.db import transaction
+from django.db.models import Sum, Q, Min, Max
 from django.utils import timezone
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from datetime import datetime, timedelta
 from decimal import Decimal
-import statistics
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.offline import plot
 import csv
 import io
-try:
-    import openpyxl
-    from openpyxl import Workbook
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
+import json
+from collections import defaultdict
 
 from .models import (
     Transaction, Category, Subcategory, RecurringPayment,
@@ -285,7 +280,7 @@ def dashboard(request):
 
 @login_required
 def manage_transactions(request):
-    """Správa transakcí - Přidat, Import/Export, Spravuj"""
+    """Správa transakcí - Přidat a Spravuj."""
     # Handle adding new transaction
     if request.method == 'POST' and 'add_transaction' in request.POST:
         form = TransactionForm(request.POST)
@@ -1148,51 +1143,374 @@ def edit_investment(request, pk):
     })
 
 
+TRANSACTION_IMPORT_SESSION_KEY = "transaction_import_preview"
+INVESTMENT_IMPORT_SESSION_KEY = "investment_import_preview"
+
+
+def _safe_json_dumps(data):
+    return json.dumps(data, ensure_ascii=False, default=str, indent=2)
+
+
+def _effective_bulk_choice(bulk, checkbox_on, opposite_map):
+    """checkbox_on True = použít hromadnou volbu; False = opačná volba."""
+    if checkbox_on:
+        return bulk
+    return opposite_map[bulk]
+
+
+def _parse_boolean(value, default=False):
+    text = (value or "").strip().lower()
+    if text in {"ano", "yes", "true", "1"}:
+        return True
+    if text in {"ne", "no", "false", "0"}:
+        return False
+    return default
+
+
+def _parse_transaction_type(value):
+    value_lower = (value or "").strip().lower()
+    mapping = {
+        "příjem": TransactionType.INCOME,
+        "prijem": TransactionType.INCOME,
+        "income": TransactionType.INCOME,
+        "výdaj": TransactionType.EXPENSE,
+        "vydaj": TransactionType.EXPENSE,
+        "expense": TransactionType.EXPENSE,
+        "investice": TransactionType.INVESTMENT,
+        "investice (přesun)": TransactionType.INVESTMENT,
+        "investment": TransactionType.INVESTMENT,
+    }
+    if value in dict(TransactionType.choices):
+        return value
+    return mapping.get(value_lower, TransactionType.EXPENSE)
+
+
+def _parse_payment_for(value):
+    value_lower = (value or "").strip().lower()
+    mapping = {
+        "za sebe": PaymentFor.SELF,
+        "self": PaymentFor.SELF,
+        "za partnera": PaymentFor.PARTNER,
+        "partner": PaymentFor.PARTNER,
+        "společný účet": PaymentFor.SHARED,
+        "spolecny ucet": PaymentFor.SHARED,
+        "shared": PaymentFor.SHARED,
+    }
+    if value in dict(PaymentFor.choices):
+        return value
+    return mapping.get(value_lower, PaymentFor.SELF)
+
+
+def _parse_date_or_none(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        return value
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _parse_decimal_or_none(value):
+    if value in [None, ""]:
+        return None
+    try:
+        return Decimal(str(value).strip().replace(",", "."))
+    except Exception:
+        return None
+
+
+def _transaction_duplicate_key(item):
+    return (
+        str(item.get("date") or ""),
+        str(item.get("amount") or ""),
+        (item.get("description") or "").strip().lower(),
+    )
+
+
+def _observation_duplicate_key(item):
+    return (
+        str(item.get("observation_date") or ""),
+        str(item.get("observed_value") or ""),
+        (item.get("investment_name") or "").strip().lower(),
+    )
+
+
+def _serialize_transaction_for_json(t):
+    return {
+        "id": t.id,
+        "date": t.date.isoformat() if t.date else "",
+        "description": t.description,
+        "transaction_type": t.transaction_type,
+        "transaction_type_label": t.get_transaction_type_display(),
+        "category": t.category.name if t.category else "",
+        "subcategory": t.subcategory.name if t.subcategory else "",
+        "amount": str(t.amount),
+        "payment_for": t.payment_for,
+        "payment_for_label": t.get_payment_for_display(),
+        "months_duration": t.months_duration,
+        "approved": t.approved,
+        "note": t.note or "",
+        "created_by": t.created_by.username if t.created_by else "",
+        "created_at": t.created_at.isoformat() if t.created_at else "",
+        "is_imported": t.is_imported,
+        "investment_name": t.investment.name if t.investment else "",
+    }
+
+
+def _serialize_observation_for_json(obs):
+    return {
+        "id": obs.id,
+        "investment_name": obs.investment.name,
+        "owner": obs.investment.owner.username if obs.investment.owner else "",
+        "observed_value": str(obs.observed_value),
+        "observation_date": obs.observation_date.isoformat(),
+        "investment_note": obs.investment.note or "",
+        "created_at": obs.created_at.isoformat() if obs.created_at else "",
+    }
+
+
+def _build_transaction_export_csv_response(transactions, filename):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow([
+        "Datum", "Popis", "Typ", "Kategorie", "Subkategorie",
+        "Částka (Kč)", "Za koho", "Na kolik měsíců",
+        "Schváleno", "Poznámka", "Kdo zapsal", "Datum zapsání", "Importováno", "Investiční skupina"
+    ])
+    for t in transactions:
+        writer.writerow([
+            t.date.isoformat() if t.date else "",
+            t.description,
+            t.get_transaction_type_display(),
+            t.category.name if t.category else "",
+            t.subcategory.name if t.subcategory else "",
+            str(t.amount),
+            t.get_payment_for_display(),
+            t.months_duration,
+            "Ano" if t.approved else "Ne",
+            t.note or "",
+            t.created_by.username if t.created_by else "",
+            t.created_at.strftime("%Y-%m-%d %H:%M:%S") if t.created_at else "",
+            "Ano" if t.is_imported else "Ne",
+            t.investment.name if t.investment else "",
+        ])
+    return response
+
+
+def _build_observation_export_csv_response(observations, filename):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow([
+        "Investiční skupina", "Vlastník", "Pozorovaná hodnota", "Datum pozorování", "Poznámka investice", "Vytvořeno"
+    ])
+    for obs in observations:
+        writer.writerow([
+            obs.investment.name,
+            obs.investment.owner.username if obs.investment.owner else "",
+            str(obs.observed_value),
+            obs.observation_date.isoformat(),
+            obs.investment.note or "",
+            obs.created_at.strftime("%Y-%m-%d %H:%M:%S") if obs.created_at else "",
+        ])
+    return response
+
+
+def _read_uploaded_rows(file):
+    filename = (file.name or "").lower()
+    if filename.endswith(".json"):
+        payload = json.loads(file.read().decode("utf-8-sig"))
+        if isinstance(payload, dict):
+            if isinstance(payload.get("items"), list):
+                return payload["items"]
+            return []
+        return payload if isinstance(payload, list) else []
+    if filename.endswith(".csv"):
+        content = file.read().decode("utf-8-sig")
+        return list(csv.DictReader(io.StringIO(content)))
+    raise ValueError("Nepodporovaný soubor. Použijte CSV nebo JSON.")
+
+
+def _normalize_transaction_rows(rows, user):
+    normalized = []
+    errors = []
+    for idx, row in enumerate(rows, start=1):
+        row_lower = {str(k).strip().lower(): v for k, v in row.items()} if isinstance(row, dict) else {}
+        date = _parse_date_or_none(row_lower.get("datum") or row_lower.get("date"))
+        amount = _parse_decimal_or_none(row_lower.get("částka (kč)") or row_lower.get("castka (kc)") or row_lower.get("amount"))
+        description = (row_lower.get("popis") or row_lower.get("description") or "").strip()
+        if not date or amount is None or not description:
+            errors.append(f"Řádek {idx}: povinná pole jsou datum, částka a popis.")
+            continue
+        transaction_type = _parse_transaction_type(row_lower.get("typ") or row_lower.get("transaction_type"))
+        category_name = (row_lower.get("kategorie") or row_lower.get("category") or "").strip()
+        subcategory_name = (row_lower.get("subkategorie") or row_lower.get("subcategory") or "").strip()
+        investment_name = (row_lower.get("investiční skupina") or row_lower.get("investicni skupina") or row_lower.get("investment_name") or "").strip()
+        category = Category.objects.filter(name__iexact=category_name).first() if category_name else None
+        subcategory = None
+        if subcategory_name and category:
+            subcategory = Subcategory.objects.filter(category=category, name__iexact=subcategory_name).first()
+        investment = Investment.objects.filter(name__iexact=investment_name).first() if investment_name else None
+        try:
+            months_duration = int(row_lower.get("na kolik měsíců") or row_lower.get("na kolik mesicu") or row_lower.get("months_duration") or 0)
+        except Exception:
+            months_duration = 0
+        normalized.append({
+            "date": date.isoformat(),
+            "description": description,
+            "transaction_type": transaction_type,
+            "category_id": category.id if category else None,
+            "subcategory_id": subcategory.id if subcategory else None,
+            "amount": str(amount),
+            "payment_for": _parse_payment_for(row_lower.get("za koho") or row_lower.get("payment_for")),
+            "months_duration": months_duration,
+            "approved": _parse_boolean(row_lower.get("schváleno") or row_lower.get("schvaleno") or row_lower.get("approved"), default=False),
+            "note": (row_lower.get("poznámka") or row_lower.get("poznamka") or row_lower.get("note") or "").strip(),
+            "investment_id": investment.id if investment else None,
+            "created_by_id": user.id,
+            "is_imported": True,
+            "is_deleted": False,
+        })
+    return normalized, errors
+
+
+def _normalize_observation_rows(rows):
+    normalized = []
+    errors = []
+    for idx, row in enumerate(rows, start=1):
+        row_lower = {str(k).strip().lower(): v for k, v in row.items()} if isinstance(row, dict) else {}
+        investment_name = (row_lower.get("investiční skupina") or row_lower.get("investicni skupina") or row_lower.get("investment_name") or "").strip()
+        observed_value = _parse_decimal_or_none(row_lower.get("pozorovaná hodnota") or row_lower.get("pozorovana hodnota") or row_lower.get("observed_value"))
+        observation_date = _parse_date_or_none(row_lower.get("datum pozorování") or row_lower.get("datum pozorovani") or row_lower.get("observation_date"))
+        if not investment_name or observed_value is None or not observation_date:
+            errors.append(f"Řádek {idx}: povinná pole jsou investiční skupina, pozorovaná hodnota a datum pozorování.")
+            continue
+        investment = Investment.objects.filter(name__iexact=investment_name).first()
+        if not investment:
+            errors.append(f"Řádek {idx}: investiční skupina '{investment_name}' neexistuje.")
+            continue
+        normalized.append({
+            "investment_id": investment.id,
+            "investment_name": investment.name,
+            "observed_value": str(observed_value),
+            "observation_date": observation_date.isoformat(),
+        })
+    return normalized, errors
+
+
+def _duplicate_preview_split(existing_items, incoming_items, key_builder):
+    """Spáruje duplicity podle klíče; zbytek rozdělí na jen-v-databázi vs. jen-v-souboru."""
+    existing_by_key = defaultdict(list)
+    incoming_by_key = defaultdict(list)
+    for item in existing_items:
+        existing_by_key[key_builder(item)].append(item)
+    for index, item in enumerate(incoming_items):
+        incoming_by_key[key_builder(item)].append((index, item))
+
+    duplicate_pairs = []
+    only_existing = []
+    only_incoming = []
+
+    all_keys = set(existing_by_key.keys()) | set(incoming_by_key.keys())
+    for key in all_keys:
+        existing_list = existing_by_key.get(key, [])
+        incoming_list = incoming_by_key.get(key, [])
+        pair_count = min(len(existing_list), len(incoming_list))
+        for i in range(pair_count):
+            duplicate_pairs.append({
+                "incoming_index": incoming_list[i][0],
+                "old": existing_list[i],
+                "new": incoming_list[i][1],
+            })
+        for j in range(pair_count, len(existing_list)):
+            only_existing.append(existing_list[j])
+        for j in range(pair_count, len(incoming_list)):
+            only_incoming.append({
+                "incoming_index": incoming_list[j][0],
+                "new": incoming_list[j][1],
+            })
+
+    duplicate_pairs.sort(key=lambda x: x["incoming_index"])
+    only_incoming.sort(key=lambda x: x["incoming_index"])
+    return duplicate_pairs, only_existing, only_incoming
+
+
+def _build_transaction_preview(import_mode, new_items):
+    existing_qs = Transaction.objects.filter(is_deleted=False).order_by("date", "created_at")
+    existing_items = [{
+        "id": t.id,
+        "date": t.date.isoformat(),
+        "description": t.description,
+        "amount": str(t.amount),
+        "transaction_type": t.transaction_type,
+    } for t in existing_qs]
+    duplicate_pairs, only_existing, only_incoming = _duplicate_preview_split(
+        existing_items, new_items, _transaction_duplicate_key
+    )
+    return {
+        "dataset": "transactions",
+        "import_mode": import_mode,
+        "existing_count": len(existing_items),
+        "file_count": len(new_items),
+        "overlap_count": len(duplicate_pairs),
+        "duplicate_pairs": duplicate_pairs,
+        "only_existing_count": len(only_existing),
+        "only_incoming_count": len(only_incoming),
+        "only_existing": only_existing,
+        "only_incoming": only_incoming,
+        "new_items": new_items,
+    }
+
+
+def _build_observation_preview(import_mode, new_items):
+    existing_qs = InvestmentObservation.objects.select_related("investment").order_by("observation_date", "created_at")
+    existing_items = [{
+        "id": obs.id,
+        "observation_date": obs.observation_date.isoformat(),
+        "observed_value": str(obs.observed_value),
+        "investment_name": obs.investment.name,
+    } for obs in existing_qs]
+    duplicate_pairs, only_existing, only_incoming = _duplicate_preview_split(
+        existing_items, new_items, _observation_duplicate_key
+    )
+    return {
+        "dataset": "investment_observations",
+        "import_mode": import_mode,
+        "existing_count": len(existing_items),
+        "file_count": len(new_items),
+        "overlap_count": len(duplicate_pairs),
+        "duplicate_pairs": duplicate_pairs,
+        "only_existing_count": len(only_existing),
+        "only_incoming_count": len(only_incoming),
+        "only_existing": only_existing,
+        "only_incoming": only_incoming,
+        "new_items": new_items,
+    }
+
+
 @login_required
 def settings(request):
-    """Nastavení - kategorie a subkategorie"""
+    """Nastavení - kategorie, subkategorie a import/export."""
     categories = Category.objects.prefetch_related('subcategories').all()
     subcategories = Subcategory.objects.select_related('category').all()
     category_form = CategoryForm()
     subcategory_form = SubcategoryForm()
     investment_form = InvestmentForm(initial={'owner': request.user})
-    
-    # Hledání anomálií
-    anomalies = []
-    
-    # Příliš vysoké položky (nad 3x průměr kategorie)
-    for category in categories:
-        category_transactions = Transaction.objects.filter(category=category, approved=True)
-        if category_transactions.exists():
-            avg_amount = category_transactions.aggregate(avg=Sum('amount'))['avg'] / category_transactions.count()
-            high_transactions = category_transactions.filter(amount__gt=avg_amount * 3)
-            for trans in high_transactions:
-                anomalies.append({
-                    'type': 'high_amount',
-                    'transaction': trans,
-                    'category': category,
-                    'avg': avg_amount,
-                })
-    
-    # Neodpovídající částky pro kategorii (statisticky odlehlé hodnoty)
-    for category in categories:
-        category_transactions = Transaction.objects.filter(category=category, approved=True)
-        if category_transactions.count() > 5:
-            amounts = [float(t.amount) for t in category_transactions]
-            if amounts:
-                mean = statistics.mean(amounts)
-                stdev = statistics.stdev(amounts) if len(amounts) > 1 else 0
-                if stdev > 0:
-                    for trans in category_transactions:
-                        z_score = abs((float(trans.amount) - mean) / stdev) if stdev > 0 else 0
-                        if z_score > 3:  # 3 sigma rule
-                            anomalies.append({
-                                'type': 'outlier',
-                                'transaction': trans,
-                                'category': category,
-                                'z_score': z_score,
-                            })
-    
+
+    transaction_date_range = Transaction.objects.filter(is_deleted=False).aggregate(
+        min_date=Min("date"),
+        max_date=Max("date"),
+    )
+    transaction_preview = request.session.get(TRANSACTION_IMPORT_SESSION_KEY)
+    observation_preview = request.session.get(INVESTMENT_IMPORT_SESSION_KEY)
+
     if request.method == 'POST':
         if 'add_category' in request.POST:
             category_form = CategoryForm(request.POST)
@@ -1215,16 +1533,18 @@ def settings(request):
                 investment.save()
                 messages.success(request, 'Investiční skupina byla přidána.')
                 return redirect('settings')
-    
+        
     context = {
         'categories': categories,
         'subcategories': subcategories,
         'category_form': category_form,
         'subcategory_form': subcategory_form,
         'investment_form': investment_form,
-        'anomalies': anomalies[:20],  # Limit na 20 anomálií
+        'transaction_date_range': transaction_date_range,
+        'transaction_import_preview': transaction_preview,
+        'investment_import_preview': observation_preview,
     }
-    
+
     return render(request, 'expenses/settings.html', context)
 
 
@@ -1240,349 +1560,379 @@ def get_subcategories(request):
 
 @login_required
 def export_transactions(request):
-    """Export transakcí do CSV nebo Excel"""
-    # Get date filters
-    date_from = request.GET.get('date_from', '')
-    date_to = request.GET.get('date_to', '')
-    export_format = request.GET.get('format', 'csv')  # 'csv' or 'excel'
-    
-    # Get all transactions (exclude deleted)
-    transactions = Transaction.objects.filter(is_deleted=False)
-    
-    # Apply date filters
+    """Export transakcí do CSV nebo JSON."""
+    date_from = request.GET.get("date_from", "")
+    date_to = request.GET.get("date_to", "")
+    export_format = request.GET.get("format", "csv")
+    transactions = Transaction.objects.filter(is_deleted=False).order_by("date", "created_at")
     if date_from:
         transactions = transactions.filter(date__gte=date_from)
     if date_to:
         transactions = transactions.filter(date__lte=date_to)
-    
-    # Order by date
-    transactions = transactions.order_by('date', 'created_at')
-    
-    if export_format == 'excel' and OPENPYXL_AVAILABLE:
-        # Export to Excel
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Transakce"
-        
-        # Headers
-        headers = [
-            'Datum', 'Popis', 'Typ', 'Kategorie', 'Subkategorie', 
-            'Částka (Kč)', 'Za koho', 'Na kolik měsíců', 
-            'Schváleno', 'Poznámka', 'Kdo zapsal', 'Datum zapsání', 'Importováno'
-        ]
-        ws.append(headers)
-        
-        # Data
-        for t in transactions:
-            ws.append([
-                t.date.strftime('%Y-%m-%d') if t.date else '',
-                t.description,
-                t.get_transaction_type_display(),
-                t.category.name if t.category else '',
-                t.subcategory.name if t.subcategory else '',
-                float(t.amount),
-                t.get_payment_for_display(),
-                t.months_duration,
-                'Ano' if t.approved else 'Ne',
-                t.note,
-                t.created_by.username if t.created_by else '',
-                t.created_at.strftime('%Y-%m-%d %H:%M:%S') if t.created_at else '',
-                'Ano' if t.is_imported else 'Ne',
-            ])
-        
-        # Create response
-        response = HttpResponse(
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        filename = f'transakce_{date_from or "all"}_{date_to or "all"}.xlsx'
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        
-        wb.save(response)
+
+    filename_base = f"transakce_{date_from or 'all'}_{date_to or 'all'}"
+    if export_format == "json":
+        payload = {
+            "dataset": "transactions",
+            "exported_at": timezone.now().isoformat(),
+            "count": transactions.count(),
+            "items": [_serialize_transaction_for_json(t) for t in transactions],
+        }
+        response = HttpResponse(_safe_json_dumps(payload), content_type="application/json; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename_base}.json"'
         return response
-    
-    else:
-        # Export to CSV
-        response = HttpResponse(content_type='text/csv; charset=utf-8')
-        filename = f'transakce_{date_from or "all"}_{date_to or "all"}.csv'
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        
-        # Add BOM for Excel UTF-8 compatibility
-        response.write('\ufeff')
-        
-        writer = csv.writer(response)
-        
-        # Headers
-        writer.writerow([
-            'Datum', 'Popis', 'Typ', 'Kategorie', 'Subkategorie', 
-            'Částka (Kč)', 'Za koho', 'Na kolik měsíců', 
-            'Schváleno', 'Poznámka', 'Kdo zapsal', 'Datum zapsání', 'Importováno'
-        ])
-        
-        # Data
-        for t in transactions:
-            writer.writerow([
-                t.date.strftime('%Y-%m-%d') if t.date else '',
-                t.description,
-                t.get_transaction_type_display(),
-                t.category.name if t.category else '',
-                t.subcategory.name if t.subcategory else '',
-                float(t.amount),
-                t.get_payment_for_display(),
-                t.months_duration,
-                'Ano' if t.approved else 'Ne',
-                t.note,
-                t.created_by.username if t.created_by else '',
-                t.created_at.strftime('%Y-%m-%d %H:%M:%S') if t.created_at else '',
-                'Ano' if t.is_imported else 'Ne',
-            ])
-        
-        return response
+
+    return _build_transaction_export_csv_response(transactions, f"{filename_base}.csv")
 
 
 @login_required
 def import_transactions(request):
-    """Import transakcí z Excel souboru"""
-    if request.method == 'POST' and request.FILES.get('file'):
-        file = request.FILES['file']
-        
-        # Check file extension
-        if not (file.name.endswith('.xlsx') or file.name.endswith('.xls') or file.name.endswith('.csv')):
-            messages.error(request, 'Nepodporovaný formát souboru. Použijte .xlsx, .xls nebo .csv.')
-            return redirect('manage_transactions?tab=import-export')
-        
+    """Dvoufázový import transakcí z CSV/JSON s náhledem duplicit."""
+    if request.method != "POST":
+        return redirect("settings")
+
+    action = request.POST.get("action", "preview")
+    if action == "cancel":
+        request.session.pop(TRANSACTION_IMPORT_SESSION_KEY, None)
+        messages.info(request, "Náhled importu transakcí byl zrušen.")
+        return redirect("settings")
+
+    if action == "preview":
+        upload = request.FILES.get("file")
+        import_mode = request.POST.get("import_mode", "append")
+        if not upload:
+            messages.error(request, "Vyberte soubor pro import.")
+            return redirect("settings")
+        if import_mode not in {"append", "replace"}:
+            messages.error(request, "Neplatný režim importu.")
+            return redirect("settings")
         try:
-            imported_count = 0
-            errors = []
-            
-            if file.name.endswith('.csv'):
-                # Parse CSV
-                file_content = file.read().decode('utf-8-sig')  # Handle BOM
-                csv_reader = csv.DictReader(io.StringIO(file_content))
-                
-                # Expected headers (flexible matching)
-                header_mapping = {
-                    'datum': 'date',
-                    'popis': 'description',
-                    'typ': 'transaction_type',
-                    'kategorie': 'category',
-                    'subkategorie': 'subcategory',
-                    'částka (kč)': 'amount',
-                    'za koho': 'payment_for',
-                    'na kolik měsíců': 'months_duration',
-                    'schváleno': 'approved',
-                    'poznámka': 'note',
-                }
-                
-                for row_num, row in enumerate(csv_reader, start=2):
-                    try:
-                        # Map headers (case-insensitive)
-                        row_lower = {k.lower().strip(): v for k, v in row.items()}
-                        
-                        # Extract data
-                        date_str = row_lower.get('datum', '').strip()
-                        description = row_lower.get('popis', '').strip()
-                        type_str = row_lower.get('typ', '').strip()
-                        category_name = row_lower.get('kategorie', '').strip()
-                        subcategory_name = row_lower.get('subkategorie', '').strip()
-                        amount_str = row_lower.get('částka (kč)', '').strip()
-                        
-                        if not date_str or not description or not amount_str:
-                            errors.append(f'Řádek {row_num}: Chybí povinná pole')
-                            continue
-                        
-                        # Parse date
-                        try:
-                            date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        except:
-                            errors.append(f'Řádek {row_num}: Neplatné datum: {date_str}')
-                            continue
-                        
-                        # Parse amount
-                        try:
-                            amount = Decimal(str(amount_str).replace(',', '.'))
-                        except:
-                            errors.append(f'Řádek {row_num}: Neplatná částka: {amount_str}')
-                            continue
-                        
-                        # Map transaction type
-                        type_map = {'příjem': TransactionType.INCOME, 'výdaj': TransactionType.EXPENSE, 
-                                   'investice': TransactionType.INVESTMENT, 'investice (přesun)': TransactionType.INVESTMENT}
-                        transaction_type = type_map.get(type_str.lower(), TransactionType.EXPENSE)
-                        
-                        # Find category
-                        category = None
-                        if category_name:
-                            category = Category.objects.filter(name__iexact=category_name).first()
-                        
-                        # Find subcategory
-                        subcategory = None
-                        if subcategory_name and category:
-                            subcategory = Subcategory.objects.filter(
-                                category=category, 
-                                name__iexact=subcategory_name
-                            ).first()
-                        
-                        # Payment for
-                        payment_for_str = row_lower.get('za koho', '').strip().lower()
-                        payment_for_map = {'za sebe': PaymentFor.SELF, 'za partnera': PaymentFor.PARTNER, 
-                                          'společný účet': PaymentFor.SHARED}
-                        payment_for = payment_for_map.get(payment_for_str, PaymentFor.SELF)
-                        
-                        # Months duration
-                        months_duration = 0
-                        if row_lower.get('na kolik měsíců'):
-                            try:
-                                months_duration = int(row_lower.get('na kolik měsíců'))
-                            except:
-                                pass
-                        
-                        # Approved
-                        approved_str = row_lower.get('schváleno', '').strip().lower()
-                        approved = approved_str in ('ano', 'yes', 'true', '1')
-                        
-                        # Note
-                        note = row_lower.get('poznámka', '').strip()
-                        
-                        # Create transaction
-                        transaction = Transaction.objects.create(
-                            date=date,
-                            description=description,
-                            transaction_type=transaction_type,
-                            category=category,
-                            subcategory=subcategory,
-                            amount=amount,
-                            payment_for=payment_for,
-                            months_duration=months_duration,
-                            approved=approved,
-                            note=note,
-                            created_by=request.user,
-                            is_imported=True,
-                            is_deleted=False
-                        )
-                        imported_count += 1
-                        
-                    except Exception as e:
-                        errors.append(f'Řádek {row_num}: Chyba - {str(e)}')
-            
-            elif OPENPYXL_AVAILABLE:
-                # Parse Excel
-                wb = openpyxl.load_workbook(file)
-                ws = wb.active
-                
-                # Read headers
-                headers = [cell.value.lower().strip() if cell.value else '' for cell in ws[1]]
-                
-                # Process rows
-                for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                    try:
-                        row_dict = dict(zip(headers, row))
-                        
-                        # Extract data (same logic as CSV)
-                        date_str = str(row_dict.get('datum', '')).strip()
-                        description = str(row_dict.get('popis', '')).strip()
-                        type_str = str(row_dict.get('typ', '')).strip()
-                        category_name = str(row_dict.get('kategorie', '')).strip()
-                        subcategory_name = str(row_dict.get('subkategorie', '')).strip()
-                        amount_str = str(row_dict.get('částka (kč)', '')).strip()
-                        
-                        if not date_str or not description or not amount_str:
-                            continue
-                        
-                        # Parse date
-                        if isinstance(row_dict.get('datum'), datetime):
-                            date = row_dict['datum'].date()
-                        else:
-                            try:
-                                date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                            except:
-                                errors.append(f'Řádek {row_num}: Neplatné datum: {date_str}')
-                                continue
-                        
-                        # Parse amount
-                        try:
-                            if isinstance(row_dict.get('částka (kč)'), (int, float)):
-                                amount = Decimal(str(row_dict['částka (kč)']))
-                            else:
-                                amount = Decimal(str(amount_str).replace(',', '.'))
-                        except:
-                            errors.append(f'Řádek {row_num}: Neplatná částka: {amount_str}')
-                            continue
-                        
-                        # Map transaction type
-                        type_map = {'příjem': TransactionType.INCOME, 'výdaj': TransactionType.EXPENSE, 
-                                   'investice': TransactionType.INVESTMENT, 'investice (přesun)': TransactionType.INVESTMENT}
-                        transaction_type = type_map.get(type_str.lower(), TransactionType.EXPENSE)
-                        
-                        # Find category
-                        category = None
-                        if category_name:
-                            category = Category.objects.filter(name__iexact=category_name).first()
-                        
-                        # Find subcategory
-                        subcategory = None
-                        if subcategory_name and category:
-                            subcategory = Subcategory.objects.filter(
-                                category=category, 
-                                name__iexact=subcategory_name
-                            ).first()
-                        
-                        # Payment for
-                        payment_for_str = str(row_dict.get('za koho', '')).strip().lower()
-                        payment_for_map = {'za sebe': PaymentFor.SELF, 'za partnera': PaymentFor.PARTNER, 
-                                          'společný účet': PaymentFor.SHARED}
-                        payment_for = payment_for_map.get(payment_for_str, PaymentFor.SELF)
-                        
-                        # Months duration
-                        months_duration = 0
-                        if row_dict.get('na kolik měsíců'):
-                            try:
-                                months_duration = int(row_dict.get('na kolik měsíců'))
-                            except:
-                                pass
-                        
-                        # Approved
-                        approved_str = str(row_dict.get('schváleno', '')).strip().lower()
-                        approved = approved_str in ('ano', 'yes', 'true', '1')
-                        
-                        # Note
-                        note = str(row_dict.get('poznámka', '')).strip()
-                        
-                        # Create transaction
-                        transaction = Transaction.objects.create(
-                            date=date,
-                            description=description,
-                            transaction_type=transaction_type,
-                            category=category,
-                            subcategory=subcategory,
-                            amount=amount,
-                            payment_for=payment_for,
-                            months_duration=months_duration,
-                            approved=approved,
-                            note=note,
-                            created_by=request.user,
-                            is_imported=True,
-                            is_deleted=False
-                        )
-                        imported_count += 1
-                        
-                    except Exception as e:
-                        errors.append(f'Řádek {row_num}: Chyba - {str(e)}')
-            else:
-                messages.error(request, 'Pro import Excel souborů je potřeba nainstalovat openpyxl: pip install openpyxl')
-                return redirect('manage_transactions?tab=import-export')
-            
-            if imported_count > 0:
-                messages.success(request, f'Úspěšně importováno {imported_count} transakcí.')
+            rows = _read_uploaded_rows(upload)
+            normalized_rows, errors = _normalize_transaction_rows(rows, request.user)
             if errors:
-                messages.warning(request, f'Při importu došlo k {len(errors)} chybám. Zkontrolujte data.')
-            
-            return redirect('manage_transactions?tab=manage')
-            
-        except Exception as e:
-            messages.error(request, f'Chyba při importu: {str(e)}')
-            return redirect('manage_transactions?tab=import-export')
-    
-    return redirect('manage_transactions?tab=import-export')
+                messages.error(request, "Import se nepodařilo načíst: " + " | ".join(errors[:6]))
+                return redirect("settings")
+            preview = _build_transaction_preview(import_mode, normalized_rows)
+            request.session[TRANSACTION_IMPORT_SESSION_KEY] = preview
+            messages.info(request, "Náhled importu transakcí je připravený. Zkontrolujte překryvy a potvrďte.")
+        except Exception as exc:
+            messages.error(request, f"Chyba při čtení souboru: {exc}")
+        return redirect("settings")
+
+    preview = request.session.get(TRANSACTION_IMPORT_SESSION_KEY)
+    if not preview:
+        messages.error(request, "Náhled importu vypršel. Nahrajte soubor znovu.")
+        return redirect("settings")
+
+    duplicate_pairs = preview.get("duplicate_pairs") or []
+    dup_decision = request.POST.get("duplicate_decision", "").strip()
+    if duplicate_pairs:
+        if dup_decision not in {"old", "new", "both"}:
+            messages.error(request, "Vyberte hromadnou volbu pro duplicity: starý, nový, nebo oba.")
+            return redirect("settings")
+
+    only_existing_bulk = request.POST.get("only_existing_bulk", "keep")
+    if only_existing_bulk not in {"keep", "drop"}:
+        only_existing_bulk = "keep"
+    only_incoming_bulk = request.POST.get("only_incoming_bulk", "import")
+    if only_incoming_bulk not in {"import", "skip"}:
+        only_incoming_bulk = "import"
+
+    opp_exist = {"keep": "drop", "drop": "keep"}
+    opp_inc = {"import": "skip", "skip": "import"}
+
+    only_existing_keep = {}
+    for row in preview.get("only_existing") or []:
+        tid = row.get("id")
+        if tid is None:
+            continue
+        cb_on = request.POST.get(f"only_existing_apply_{tid}") == "1"
+        eff = _effective_bulk_choice(only_existing_bulk, cb_on, opp_exist)
+        only_existing_keep[tid] = eff == "keep"
+
+    only_incoming_import = {}
+    for entry in preview.get("only_incoming") or []:
+        idx = entry.get("incoming_index")
+        if idx is None:
+            continue
+        cb_on = request.POST.get(f"only_incoming_apply_{idx}") == "1"
+        eff = _effective_bulk_choice(only_incoming_bulk, cb_on, opp_inc)
+        only_incoming_import[idx] = eff == "import"
+
+    imported_count = 0
+    with transaction.atomic():
+        if preview["import_mode"] == "replace":
+            Transaction.objects.filter(is_deleted=False).update(is_deleted=True)
+
+        for pair in duplicate_pairs:
+            decision = dup_decision
+            old_id = pair["old"].get("id")
+            if old_id:
+                if decision == "new":
+                    Transaction.objects.filter(pk=old_id).update(is_deleted=True)
+                elif decision in {"old", "both"}:
+                    Transaction.objects.filter(pk=old_id).update(is_deleted=False)
+            if decision in {"new", "both"}:
+                new_item = pair["new"]
+                Transaction.objects.create(
+                    date=_parse_date_or_none(new_item.get("date")),
+                    description=new_item.get("description", ""),
+                    transaction_type=new_item.get("transaction_type") or TransactionType.EXPENSE,
+                    category_id=new_item.get("category_id"),
+                    subcategory_id=new_item.get("subcategory_id"),
+                    amount=_parse_decimal_or_none(new_item.get("amount")) or Decimal("0"),
+                    payment_for=new_item.get("payment_for") or PaymentFor.SELF,
+                    months_duration=new_item.get("months_duration") or 0,
+                    approved=bool(new_item.get("approved")),
+                    note=new_item.get("note") or "",
+                    created_by_id=request.user.id,
+                    investment_id=new_item.get("investment_id"),
+                    is_imported=True,
+                    is_deleted=False,
+                )
+                imported_count += 1
+
+        duplicate_indexes = {pair["incoming_index"] for pair in duplicate_pairs}
+        for index, item in enumerate(preview["new_items"]):
+            if index in duplicate_indexes:
+                continue
+            if not only_incoming_import.get(index, True):
+                continue
+            Transaction.objects.create(
+                date=_parse_date_or_none(item.get("date")),
+                description=item.get("description", ""),
+                transaction_type=item.get("transaction_type") or TransactionType.EXPENSE,
+                category_id=item.get("category_id"),
+                subcategory_id=item.get("subcategory_id"),
+                amount=_parse_decimal_or_none(item.get("amount")) or Decimal("0"),
+                payment_for=item.get("payment_for") or PaymentFor.SELF,
+                months_duration=item.get("months_duration") or 0,
+                approved=bool(item.get("approved")),
+                note=item.get("note") or "",
+                created_by_id=request.user.id,
+                investment_id=item.get("investment_id"),
+                is_imported=True,
+                is_deleted=False,
+            )
+            imported_count += 1
+
+        for tid, want_keep in only_existing_keep.items():
+            if want_keep:
+                Transaction.objects.filter(pk=tid).update(is_deleted=False)
+            else:
+                Transaction.objects.filter(pk=tid).update(is_deleted=True)
+
+    request.session.pop(TRANSACTION_IMPORT_SESSION_KEY, None)
+    messages.success(
+        request,
+        f"Import transakcí dokončen. Nově zapsáno {imported_count} řádků, překryvy vyřešeny: {len(preview['duplicate_pairs'])}.",
+    )
+    return redirect("settings")
+
+
+@login_required
+def export_investment_observations(request):
+    """Export pozorování investic do CSV nebo JSON."""
+    export_format = request.GET.get("format", "csv")
+    observations = InvestmentObservation.objects.select_related("investment", "investment__owner").order_by("observation_date", "created_at")
+    filename_base = "investice_pozorovani"
+    if export_format == "json":
+        payload = {
+            "dataset": "investment_observations",
+            "exported_at": timezone.now().isoformat(),
+            "count": observations.count(),
+            "items": [_serialize_observation_for_json(obs) for obs in observations],
+        }
+        response = HttpResponse(_safe_json_dumps(payload), content_type="application/json; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename_base}.json"'
+        return response
+    return _build_observation_export_csv_response(observations, f"{filename_base}.csv")
+
+
+@login_required
+def import_investment_observations(request):
+    """Dvoufázový import pozorování investic z CSV/JSON s kontrolou duplicit."""
+    if request.method != "POST":
+        return redirect("settings")
+
+    action = request.POST.get("action", "preview")
+    if action == "cancel":
+        request.session.pop(INVESTMENT_IMPORT_SESSION_KEY, None)
+        messages.info(request, "Náhled importu investičních pozorování byl zrušen.")
+        return redirect("settings")
+
+    if action == "preview":
+        upload = request.FILES.get("file")
+        import_mode = request.POST.get("import_mode", "append")
+        if not upload:
+            messages.error(request, "Vyberte soubor pro import.")
+            return redirect("settings")
+        if import_mode not in {"append", "replace"}:
+            messages.error(request, "Neplatný režim importu.")
+            return redirect("settings")
+        try:
+            rows = _read_uploaded_rows(upload)
+            normalized_rows, errors = _normalize_observation_rows(rows)
+            if errors:
+                messages.error(request, "Import se nepodařilo načíst: " + " | ".join(errors[:6]))
+                return redirect("settings")
+            preview = _build_observation_preview(import_mode, normalized_rows)
+            request.session[INVESTMENT_IMPORT_SESSION_KEY] = preview
+            messages.info(request, "Náhled importu investičních pozorování je připravený.")
+        except Exception as exc:
+            messages.error(request, f"Chyba při čtení souboru: {exc}")
+        return redirect("settings")
+
+    preview = request.session.get(INVESTMENT_IMPORT_SESSION_KEY)
+    if not preview:
+        messages.error(request, "Náhled importu vypršel. Nahrajte soubor znovu.")
+        return redirect("settings")
+
+    duplicate_pairs = preview.get("duplicate_pairs") or []
+    dup_decision = request.POST.get("duplicate_decision", "").strip()
+    if duplicate_pairs:
+        if dup_decision not in {"old", "new", "both"}:
+            messages.error(request, "Vyberte hromadnou volbu pro duplicity: starý, nový, nebo oba.")
+            return redirect("settings")
+
+    only_existing_bulk = request.POST.get("only_existing_bulk", "keep")
+    if only_existing_bulk not in {"keep", "drop"}:
+        only_existing_bulk = "keep"
+    only_incoming_bulk = request.POST.get("only_incoming_bulk", "import")
+    if only_incoming_bulk not in {"import", "skip"}:
+        only_incoming_bulk = "import"
+
+    opp_exist = {"keep": "drop", "drop": "keep"}
+    opp_inc = {"import": "skip", "skip": "import"}
+
+    only_existing_keep = {}
+    for row in preview.get("only_existing") or []:
+        oid = row.get("id")
+        if oid is None:
+            continue
+        cb_on = request.POST.get(f"only_existing_apply_{oid}") == "1"
+        eff = _effective_bulk_choice(only_existing_bulk, cb_on, opp_exist)
+        only_existing_keep[oid] = eff == "keep"
+
+    only_incoming_import = {}
+    for entry in preview.get("only_incoming") or []:
+        idx = entry.get("incoming_index")
+        if idx is None:
+            continue
+        cb_on = request.POST.get(f"only_incoming_apply_{idx}") == "1"
+        eff = _effective_bulk_choice(only_incoming_bulk, cb_on, opp_inc)
+        only_incoming_import[idx] = eff == "import"
+
+    imported_count = 0
+    with transaction.atomic():
+        existing_ids_before = set(InvestmentObservation.objects.values_list("id", flat=True))
+        keep_old_ids = set()
+
+        for pair in duplicate_pairs:
+            decision = dup_decision
+            old_id = pair["old"].get("id")
+            if old_id:
+                if decision in {"old", "both"}:
+                    keep_old_ids.add(old_id)
+                if decision == "new":
+                    InvestmentObservation.objects.filter(pk=old_id).delete()
+            if decision in {"new", "both"}:
+                new_item = pair["new"]
+                InvestmentObservation.objects.create(
+                    investment_id=new_item["investment_id"],
+                    observed_value=_parse_decimal_or_none(new_item.get("observed_value")) or Decimal("0"),
+                    observation_date=_parse_date_or_none(new_item.get("observation_date")),
+                )
+                imported_count += 1
+
+        duplicate_indexes = {pair["incoming_index"] for pair in duplicate_pairs}
+        for index, item in enumerate(preview["new_items"]):
+            if index in duplicate_indexes:
+                continue
+            if not only_incoming_import.get(index, True):
+                continue
+            InvestmentObservation.objects.create(
+                investment_id=item["investment_id"],
+                observed_value=_parse_decimal_or_none(item.get("observed_value")) or Decimal("0"),
+                observation_date=_parse_date_or_none(item.get("observation_date")),
+            )
+            imported_count += 1
+
+        for oid, want_keep in only_existing_keep.items():
+            if want_keep:
+                keep_old_ids.add(oid)
+            else:
+                InvestmentObservation.objects.filter(pk=oid).delete()
+
+        if preview["import_mode"] == "replace":
+            delete_ids = existing_ids_before - keep_old_ids
+            if delete_ids:
+                InvestmentObservation.objects.filter(id__in=delete_ids).delete()
+
+        for investment in Investment.objects.all():
+            latest = investment.observations.order_by("-observation_date", "-created_at").first()
+            if latest:
+                investment.observed_value = latest.observed_value
+                investment.observed_value_date = latest.observation_date
+            else:
+                investment.observed_value = None
+                investment.observed_value_date = None
+            investment.save(update_fields=["observed_value", "observed_value_date", "updated_at"])
+
+    request.session.pop(INVESTMENT_IMPORT_SESSION_KEY, None)
+    messages.success(
+        request,
+        f"Import pozorování investic dokončen. Nově zapsáno {imported_count} řádků, překryvy vyřešeny: {len(preview['duplicate_pairs'])}.",
+    )
+    return redirect("settings")
+
+
+@login_required
+def download_import_template(request, dataset, template_format):
+    """Stažení šablony importu pro transakce nebo pozorování investic."""
+    if dataset not in {"transactions", "investment_observations"}:
+        messages.error(request, "Neznámý typ šablony.")
+        return redirect("settings")
+    if template_format not in {"csv", "json"}:
+        messages.error(request, "Neznámý formát šablony.")
+        return redirect("settings")
+
+    if dataset == "transactions":
+        sample = {
+            "Datum": "2026-05-01",
+            "Popis": "Nákup potravin",
+            "Typ": "Výdaj",
+            "Kategorie": "Domácnost",
+            "Subkategorie": "Potraviny",
+            "Částka (Kč)": "1250.00",
+            "Za koho": "Společný účet",
+            "Na kolik měsíců": "0",
+            "Schváleno": "Ano",
+            "Poznámka": "Týdenní nákup",
+            "Investiční skupina": "",
+        }
+        filename_base = "template_import_transakce"
+    else:
+        sample = {
+            "Investiční skupina": "S&P 500 ETF",
+            "Pozorovaná hodnota": "154320.50",
+            "Datum pozorování": "2026-05-01",
+        }
+        filename_base = "template_import_investice_pozorovani"
+
+    if template_format == "json":
+        payload = {"dataset": dataset, "items": [sample]}
+        response = HttpResponse(_safe_json_dumps(payload), content_type="application/json; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename_base}.json"'
+        return response
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename_base}.csv"'
+    response.write("\ufeff")
+    writer = csv.DictWriter(response, fieldnames=list(sample.keys()))
+    writer.writeheader()
+    writer.writerow(sample)
+    return response
 
 
 @login_required

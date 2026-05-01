@@ -53,3 +53,5 @@ Thumbs.db
 *.pid
 *.sock
 
+pozn.txt
+data_prepared/*

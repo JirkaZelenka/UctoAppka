@@ -19,6 +19,9 @@ urlpatterns = [
     path('api/subcategories/', views.get_subcategories, name='get_subcategories'),
     path('export-transactions/', views.export_transactions, name='export_transactions'),
     path('import-transactions/', views.import_transactions, name='import_transactions'),
+    path('export-investment-observations/', views.export_investment_observations, name='export_investment_observations'),
+    path('import-investment-observations/', views.import_investment_observations, name='import_investment_observations'),
+    path('download-import-template/<str:dataset>/<str:template_format>/', views.download_import_template, name='download_import_template'),
     path('remove-transaction/<int:pk>/', views.remove_transaction, name='remove_transaction'),
 ]
 

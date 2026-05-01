@@ -166,55 +166,338 @@
 </div>
 
 <div class="row mt-4">
-    <div class="col-12">
+    <div class="col-lg-6">
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0">
-                    <i class="bi bi-exclamation-triangle"></i> Anomálie a nekompatibilní položky
+                    <i class="bi bi-arrow-left-right"></i> Import / Export transakcí
                 </h4>
             </div>
             <div class="card-body">
-                {% if anomalies %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Typ</th>
-                                    <th>Transakce</th>
-                                    <th>Kategorie</th>
-                                    <th>Částka</th>
-                                    <th>Detaily</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for anomaly in anomalies %}
-                                <tr>
-                                    <td>
-                                        {% if anomaly.type == 'high_amount' %}
-                                            <span class="badge bg-warning">Vysoká částka</span>
-                                        {% else %}
-                                            <span class="badge bg-danger">Odlehlá hodnota</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>{{ anomaly.transaction.description }}</td>
-                                    <td>{{ anomaly.category.name }}</td>
-                                    <td><strong>{{ anomaly.transaction.amount|czech_int }} Kč</strong></td>
-                                    <td>
-                                        {% if anomaly.type == 'high_amount' %}
-                                            Průměr: {{ anomaly.avg|czech_int }} Kč
-                                        {% else %}
-                                            Z-score: {{ anomaly.z_score|floatformat:2 }}
-                                        {% endif %}
-                                    </td>
-                                </tr>
+                <h6>Export</h6>
+                <form method="get" action="{% url 'export_transactions' %}" class="mb-4">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label">Datum od</label>
+                            <input type="date" name="date_from" class="form-control" value="{% if transaction_date_range.min_date %}{{ transaction_date_range.min_date|date:'Y-m-d' }}{% endif %}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Datum do</label>
+                            <input type="date" name="date_to" class="form-control" value="{% if transaction_date_range.max_date %}{{ transaction_date_range.max_date|date:'Y-m-d' }}{% endif %}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Formát</label>
+                            <select name="format" class="form-select">
+                                <option value="csv">CSV</option>
+                                <option value="json">JSON</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-outline-primary mt-3 w-100" type="submit">
+                        <i class="bi bi-download"></i> Exportovat transakce
+                    </button>
+                </form>
+
+                <h6>Import</h6>
+                <form method="post" action="{% url 'import_transactions' %}" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preview">
+                    <div class="mb-2">
+                        <label class="form-label">Soubor (CSV/JSON)</label>
+                        <input type="file" class="form-control" name="file" accept=".csv,.json" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Režim importu</label>
+                        <select name="import_mode" class="form-select" required>
+                            <option value="append">Přidat k aktuálním datům</option>
+                            <option value="replace">Nahradit všechna stávající data</option>
+                        </select>
+                    </div>
+                    <div class="d-grid gap-2 mt-3">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-search"></i> Načíst náhled importu transakcí
+                        </button>
+                        <div class="btn-group">
+                            <a class="btn btn-outline-secondary" href="{% url 'download_import_template' 'transactions' 'csv' %}">Šablona CSV</a>
+                            <a class="btn btn-outline-secondary" href="{% url 'download_import_template' 'transactions' 'json' %}">Šablona JSON</a>
+                        </div>
+                    </div>
+                </form>
+
+                {% if transaction_import_preview %}
+                    <hr>
+                    <h6>Náhled importu transakcí</h6>
+                    <p class="small text-muted mb-2">
+                        Před importem: <strong>{{ transaction_import_preview.existing_count }}</strong>,
+                        v souboru: <strong>{{ transaction_import_preview.file_count }}</strong>,
+                        překryv: <strong>{{ transaction_import_preview.overlap_count }}</strong>,
+                        jen v aktuální DB: <strong>{{ transaction_import_preview.only_existing_count|default:0 }}</strong>,
+                        jen v souboru: <strong>{{ transaction_import_preview.only_incoming_count|default:0 }}</strong>.
+                    </p>
+                    <form method="post" action="{% url 'import_transactions' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="confirm">
+                        {% if transaction_import_preview.duplicate_pairs %}
+                            <div class="mb-3">
+                                <label class="form-label">Duplicity — jedna volba pro všechny páry</label>
+                                <select name="duplicate_decision" class="form-select form-select-sm" required>
+                                    <option value="old">Ponechat starý</option>
+                                    <option value="new">Vzít nový</option>
+                                    <option value="both">Ponechat oba</option>
+                                </select>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Původní řádek</th>
+                                            <th>Nový řádek</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for pair in transaction_import_preview.duplicate_pairs %}
+                                            <tr>
+                                                <td>
+                                                    <strong>{{ pair.old.date }}</strong> | {{ pair.old.description }} | {{ pair.old.amount }} Kč
+                                                </td>
+                                                <td>
+                                                    <strong>{{ pair.new.date }}</strong> | {{ pair.new.description }} | {{ pair.new.amount }} Kč
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-success py-2 mb-3">Nenalezeny žádné duplicity.</div>
+                        {% endif %}
+                        {% if transaction_import_preview.only_existing %}
+                            <h6 class="mt-3 mb-2">Pouze v aktuální databázi (bez shody v souboru)</h6>
+                            <p class="small text-muted mb-1">Řádky, u kterých není v importu jiný řádek se shodným datem, částkou a popisem — nebo jich je v DB navíc oproti souboru.</p>
+                            <div class="row g-2 align-items-end mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-0">Hromadně</label>
+                                    <select name="only_existing_bulk" class="form-select form-select-sm">
+                                        <option value="keep" selected>Ponechat</option>
+                                        <option value="drop">Nepoužít</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-12">
+                                    <small class="text-muted">U každého řádku: zaškrtnuto = použít hromadnou volbu; odškrtnuto = použije se opak (např. u „Ponechat“ odškrtnutý řádek zrušíte).</small>
+                                </div>
+                            </div>
+                            <ul class="list-group list-group-flush small mb-3 border rounded">
+                                {% for row in transaction_import_preview.only_existing %}
+                                    <li class="list-group-item py-2 d-flex align-items-start gap-2">
+                                        <div class="form-check mt-1">
+                                            <input class="form-check-input" type="checkbox" name="only_existing_apply_{{ row.id }}" value="1" id="tx-ex-{{ row.id }}" checked>
+                                            <label class="form-check-label visually-hidden" for="tx-ex-{{ row.id }}">Platí hromadná volba</label>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>{{ row.date }}</strong> | {{ row.description }} | {{ row.amount }} Kč
+                                        </div>
+                                    </li>
                                 {% endfor %}
-                            </tbody>
-                        </table>
+                            </ul>
+                        {% endif %}
+                        {% if transaction_import_preview.only_incoming %}
+                            <h6 class="mt-3 mb-2">Pouze v importovaném souboru (bez shody v DB)</h6>
+                            <p class="small text-muted mb-1">Řádky, u kterých není v databázi odpovídající záznam — nebo jich je v souboru navíc oproti DB.</p>
+                            <div class="row g-2 align-items-end mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-0">Hromadně</label>
+                                    <select name="only_incoming_bulk" class="form-select form-select-sm">
+                                        <option value="import" selected>Ponechat (importovat)</option>
+                                        <option value="skip">Nepoužít (přeskočit)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-12">
+                                    <small class="text-muted">Zaškrtnuto = použít hromadnou volbu; odškrtnuto = opak.</small>
+                                </div>
+                            </div>
+                            <ul class="list-group list-group-flush small mb-3 border rounded">
+                                {% for entry in transaction_import_preview.only_incoming %}
+                                    <li class="list-group-item py-2 d-flex align-items-start gap-2">
+                                        <div class="form-check mt-1">
+                                            <input class="form-check-input" type="checkbox" name="only_incoming_apply_{{ entry.incoming_index }}" value="1" id="tx-in-{{ entry.incoming_index }}" checked>
+                                            <label class="form-check-label visually-hidden" for="tx-in-{{ entry.incoming_index }}">Platí hromadná volba</label>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>{{ entry.new.date }}</strong> | {{ entry.new.description }} | {{ entry.new.amount }} Kč
+                                        </div>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">Potvrdit import transakcí</button>
+                        </div>
+                    </form>
+                    <form method="post" action="{% url 'import_transactions' %}" class="mt-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="cancel">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">Zrušit náhled</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-graph-up-arrow"></i> Import / Export Investice-pozorování
+                </h4>
+            </div>
+            <div class="card-body">
+                <h6>Export</h6>
+                <form method="get" action="{% url 'export_investment_observations' %}" class="mb-4">
+                    <div class="mb-3">
+                        <label class="form-label">Formát</label>
+                        <select name="format" class="form-select">
+                            <option value="csv">CSV</option>
+                            <option value="json">JSON</option>
+                        </select>
                     </div>
-                {% else %}
-                    <div class="alert alert-success">
-                        <i class="bi bi-check-circle"></i> Žádné anomálie nenalezeny!
+                    <button class="btn btn-outline-primary w-100" type="submit">
+                        <i class="bi bi-download"></i> Exportovat investice-pozorování
+                    </button>
+                </form>
+
+                <h6>Import</h6>
+                <form method="post" action="{% url 'import_investment_observations' %}" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preview">
+                    <div class="mb-2">
+                        <label class="form-label">Soubor (CSV/JSON)</label>
+                        <input type="file" class="form-control" name="file" accept=".csv,.json" required>
                     </div>
+                    <div class="mb-2">
+                        <label class="form-label">Režim importu</label>
+                        <select name="import_mode" class="form-select" required>
+                            <option value="append">Přidat k aktuálním datům</option>
+                            <option value="replace">Nahradit všechna stávající data</option>
+                        </select>
+                    </div>
+                    <div class="d-grid gap-2 mt-3">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-search"></i> Načíst náhled importu pozorování
+                        </button>
+                        <div class="btn-group">
+                            <a class="btn btn-outline-secondary" href="{% url 'download_import_template' 'investment_observations' 'csv' %}">Šablona CSV</a>
+                            <a class="btn btn-outline-secondary" href="{% url 'download_import_template' 'investment_observations' 'json' %}">Šablona JSON</a>
+                        </div>
+                    </div>
+                </form>
+
+                {% if investment_import_preview %}
+                    <hr>
+                    <h6>Náhled importu investic-pozorování</h6>
+                    <p class="small text-muted mb-2">
+                        Před importem: <strong>{{ investment_import_preview.existing_count }}</strong>,
+                        v souboru: <strong>{{ investment_import_preview.file_count }}</strong>,
+                        překryv: <strong>{{ investment_import_preview.overlap_count }}</strong>,
+                        jen v aktuální DB: <strong>{{ investment_import_preview.only_existing_count|default:0 }}</strong>,
+                        jen v souboru: <strong>{{ investment_import_preview.only_incoming_count|default:0 }}</strong>.
+                    </p>
+                    <form method="post" action="{% url 'import_investment_observations' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="confirm">
+                        {% if investment_import_preview.duplicate_pairs %}
+                            <div class="mb-3">
+                                <label class="form-label">Duplicity — jedna volba pro všechny páry</label>
+                                <select name="duplicate_decision" class="form-select form-select-sm" required>
+                                    <option value="old">Ponechat starý</option>
+                                    <option value="new">Vzít nový</option>
+                                    <option value="both">Ponechat oba</option>
+                                </select>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Původní řádek</th>
+                                            <th>Nový řádek</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for pair in investment_import_preview.duplicate_pairs %}
+                                            <tr>
+                                                <td><strong>{{ pair.old.observation_date }}</strong> | {{ pair.old.investment_name }} | {{ pair.old.observed_value }} Kč</td>
+                                                <td><strong>{{ pair.new.observation_date }}</strong> | {{ pair.new.investment_name }} | {{ pair.new.observed_value }} Kč</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-success py-2 mb-3">Nenalezeny žádné duplicity.</div>
+                        {% endif %}
+                        {% if investment_import_preview.only_existing %}
+                            <h6 class="mt-3 mb-2">Pouze v aktuální databázi (bez shody v souboru)</h6>
+                            <p class="small text-muted mb-1">Záznamy, u kterých není v importu jiný řádek se shodným datem, částkou a názvem investice — nebo jich je v DB navíc oproti souboru.</p>
+                            <div class="row g-2 align-items-end mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-0">Hromadně</label>
+                                    <select name="only_existing_bulk" class="form-select form-select-sm">
+                                        <option value="keep" selected>Ponechat</option>
+                                        <option value="drop">Nepoužít</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-12">
+                                    <small class="text-muted">Zaškrtnuto = použít hromadnou volbu; odškrtnuto = opak.</small>
+                                </div>
+                            </div>
+                            <ul class="list-group list-group-flush small mb-3 border rounded">
+                                {% for row in investment_import_preview.only_existing %}
+                                    <li class="list-group-item py-2 d-flex align-items-start gap-2">
+                                        <div class="form-check mt-1">
+                                            <input class="form-check-input" type="checkbox" name="only_existing_apply_{{ row.id }}" value="1" id="inv-ex-{{ row.id }}" checked>
+                                            <label class="form-check-label visually-hidden" for="inv-ex-{{ row.id }}">Platí hromadná volba</label>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>{{ row.observation_date }}</strong> | {{ row.investment_name }} | {{ row.observed_value }} Kč
+                                        </div>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                        {% if investment_import_preview.only_incoming %}
+                            <h6 class="mt-3 mb-2">Pouze v importovaném souboru (bez shody v DB)</h6>
+                            <p class="small text-muted mb-1">Záznamy, u kterých není v databázi odpovídající pozorování — nebo jich je v souboru navíc oproti DB.</p>
+                            <div class="row g-2 align-items-end mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-0">Hromadně</label>
+                                    <select name="only_incoming_bulk" class="form-select form-select-sm">
+                                        <option value="import" selected>Ponechat (importovat)</option>
+                                        <option value="skip">Nepoužít (přeskočit)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-12">
+                                    <small class="text-muted">Zaškrtnuto = použít hromadnou volbu; odškrtnuto = opak.</small>
+                                </div>
+                            </div>
+                            <ul class="list-group list-group-flush small mb-3 border rounded">
+                                {% for entry in investment_import_preview.only_incoming %}
+                                    <li class="list-group-item py-2 d-flex align-items-start gap-2">
+                                        <div class="form-check mt-1">
+                                            <input class="form-check-input" type="checkbox" name="only_incoming_apply_{{ entry.incoming_index }}" value="1" id="inv-in-{{ entry.incoming_index }}" checked>
+                                            <label class="form-check-label visually-hidden" for="inv-in-{{ entry.incoming_index }}">Platí hromadná volba</label>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>{{ entry.new.observation_date }}</strong> | {{ entry.new.investment_name }} | {{ entry.new.observed_value }} Kč
+                                        </div>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary">Potvrdit import pozorování</button>
+                    </form>
+                    <form method="post" action="{% url 'import_investment_observations' %}" class="mt-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="cancel">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">Zrušit náhled</button>
+                    </form>
                 {% endif %}
             </div>
         </div>
