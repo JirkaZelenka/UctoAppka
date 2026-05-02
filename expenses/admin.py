@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from .models import (
-    Category, Subcategory, Transaction, RecurringPayment, 
+    Category, Subcategory, Transaction, RecurringPayment, RecurringPaymentPaidDate,
     Investment, BudgetLimit
 )
 
@@ -32,9 +32,16 @@ class TransactionAdmin(admin.ModelAdmin):
 
 @admin.register(RecurringPayment)
 class RecurringPaymentAdmin(admin.ModelAdmin):
-    list_display = ['name', 'amount', 'frequency_months', 'next_payment_date', 'active']
-    list_filter = ['active', 'payment_for']
-    search_fields = ['name', 'note']
+    list_display = ['name', 'amount', 'frequency_months', 'start_date', 'active']
+    list_filter = ['active']
+    search_fields = ['name']
+
+
+@admin.register(RecurringPaymentPaidDate)
+class RecurringPaymentPaidDateAdmin(admin.ModelAdmin):
+    list_display = ['recurring_payment', 'due_date', 'created_at']
+    list_filter = ['due_date']
+    date_hierarchy = 'due_date'
 
 
 @admin.register(Investment)

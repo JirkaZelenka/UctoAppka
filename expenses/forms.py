@@ -208,34 +208,27 @@ class InvestmentValueForm(forms.ModelForm):
 
 
 class RecurringPaymentForm(forms.ModelForm):
+    def clean_frequency_months(self):
+        v = self.cleaned_data.get('frequency_months')
+        if v is not None and v < 1:
+            raise forms.ValidationError('Frekvence musí být alespoň 1 měsíc.')
+        return v
+
     class Meta:
         model = RecurringPayment
-        fields = [
-            'name', 'amount', 'transaction_type', 'category', 'subcategory', 'frequency_months',
-            'next_payment_date', 'payment_for', 'active', 'note'
-        ]
+        fields = ['name', 'amount', 'frequency_months', 'start_date', 'active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'transaction_type': forms.Select(attrs={'class': 'form-control'}),
-            'category': forms.Select(attrs={'class': 'form-control'}),
-            'subcategory': forms.Select(attrs={'class': 'form-control'}),
             'frequency_months': forms.NumberInput(attrs={'class': 'form-control', 'min': '1'}),
-            'next_payment_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'payment_for': forms.Select(attrs={'class': 'form-control'}),
+            'start_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'note': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
         labels = {
             'name': 'Název',
             'amount': 'Částka (Kč)',
-            'transaction_type': 'Typ',
-            'category': 'Kategorie',
-            'subcategory': 'Subkategorie',
             'frequency_months': 'Frekvence (měsíce)',
-            'next_payment_date': 'Datum další platby',
-            'payment_for': 'Za koho placeno',
+            'start_date': 'Počáteční datum platby',
             'active': 'Aktivní',
-            'note': 'Poznámka',
         }
 

@@ -370,11 +370,6 @@
                                         <td>{{ transaction.date|date:"d.m.Y" }}</td>
                                         <td>
                                             {{ transaction.description }}
-                                            {% if transaction.recurring_payment %}
-                                                <a href="{% url 'recurring_payments' %}" class="badge bg-info text-decoration-none ms-1" title="Trvalá platba: {{ transaction.recurring_payment.name }}">
-                                                    (R)
-                                                </a>
-                                            {% endif %}
                                             {% if transaction.is_imported %}
                                                 <span class="badge bg-secondary text-decoration-none ms-1" title="Importováno">
                                                     (Imp)

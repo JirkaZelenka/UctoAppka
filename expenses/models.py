@@ -104,9 +104,6 @@ class Transaction(models.Model):
     # Pro investice - link na investiční skupinu
     investment = models.ForeignKey('Investment', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', verbose_name="Investiční skupina")
     
-    # Pro trvalé platby - link na trvalou platbu
-    recurring_payment = models.ForeignKey('RecurringPayment', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', verbose_name="Trvalá platba")
-    
     class Meta:
         verbose_name = "Transakce"
         verbose_name_plural = "Transakce"
@@ -117,37 +114,47 @@ class Transaction(models.Model):
 
 
 class RecurringPayment(models.Model):
-    """Trvalé platby - předplatná, nájem, atd."""
+    """Trvalé platby - předplatná, nájem, atd. (orientační plán, nezávislý na transakcích)."""
     name = models.CharField(max_length=200, verbose_name="Název")
     amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Částka")
-    transaction_type = models.CharField(
-        max_length=20,
-        choices=TransactionType.choices,
-        default=TransactionType.EXPENSE,
-        verbose_name="Typ"
-    )
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Kategorie")
-    subcategory = models.ForeignKey(Subcategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Subkategorie")
     frequency_months = models.IntegerField(default=1, verbose_name="Frekvence (měsíce)")
-    next_payment_date = models.DateField(verbose_name="Datum další platby")
-    payment_for = models.CharField(
-        max_length=20,
-        choices=PaymentFor.choices,
-        default=PaymentFor.SHARED,
-        verbose_name="Za koho placeno"
-    )
+    start_date = models.DateField(verbose_name="Počáteční datum platby")
     active = models.BooleanField(default=True, verbose_name="Aktivní")
-    note = models.TextField(blank=True, verbose_name="Poznámka")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         verbose_name = "Trvalá platba"
         verbose_name_plural = "Trvalé platby"
-        ordering = ['next_payment_date']
+        ordering = ['start_date', 'name']
     
     def __str__(self):
-        return f"{self.name} - {self.amount} Kč každých {self.frequency_months} měsíců"
+        return f"{self.name} - {self.amount} Kč / {self.frequency_months} měs."
+
+
+class RecurringPaymentPaidDate(models.Model):
+    """Označení, že konkrétní naplánovaný termín trvalé platby byl uhrazen (orientační)."""
+    recurring_payment = models.ForeignKey(
+        RecurringPayment,
+        on_delete=models.CASCADE,
+        related_name='paid_dates',
+        verbose_name="Trvalá platba",
+    )
+    due_date = models.DateField(verbose_name="Datum splátky")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Uhrazený termín trvalé platby"
+        verbose_name_plural = "Uhrazené termíny trvalých plateb"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['recurring_payment', 'due_date'],
+                name='uniq_recurring_payment_due_date',
+            ),
+        ]
+    
+    def __str__(self):
+        return f"{self.recurring_payment_id} @ {self.due_date}"
 
 
 class Investment(models.Model):

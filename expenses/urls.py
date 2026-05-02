@@ -12,7 +12,7 @@ urlpatterns = [
     path('statistics/', views.statistics, name='statistics'),
     path('predictions/', views.predictions, name='predictions'),
     path('recurring-payments/', views.recurring_payments, name='recurring_payments'),
-    path('create-transaction-from-recurring/<int:pk>/', views.create_transaction_from_recurring, name='create_transaction_from_recurring'),
+    path('recurring-payments/toggle-paid/', views.recurring_payment_toggle_paid, name='recurring_payment_toggle_paid'),
     path('investments/', views.investments, name='investments'),
     path('edit-investment/<int:pk>/', views.edit_investment, name='edit_investment'),
     path('settings/', views.settings, name='settings'),
@@ -21,6 +21,8 @@ urlpatterns = [
     path('import-transactions/', views.import_transactions, name='import_transactions'),
     path('export-investment-observations/', views.export_investment_observations, name='export_investment_observations'),
     path('import-investment-observations/', views.import_investment_observations, name='import_investment_observations'),
+    path('export-recurring-payments/', views.export_recurring_payments, name='export_recurring_payments'),
+    path('import-recurring-payments/', views.import_recurring_payments, name='import_recurring_payments'),
     path('download-import-template/<str:dataset>/<str:template_format>/', views.download_import_template, name='download_import_template'),
     path('remove-transaction/<int:pk>/', views.remove_transaction, name='remove_transaction'),
 ]

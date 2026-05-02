@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 
 from django.shortcuts import render, redirect, get_object_or_404
@@ -10,8 +11,9 @@ from django.db import transaction
 from django.db.models import Sum, Q, Min, Max
 from django.utils import timezone
 from django.http import JsonResponse, HttpResponse
-from django.views.decorators.http import require_http_methods
-from datetime import datetime, timedelta
+from django.views.decorators.http import require_http_methods, require_POST
+from django.utils.dateparse import parse_date
+from datetime import datetime, timedelta, date
 from decimal import Decimal
 import plotly.graph_objects as go
 from plotly.offline import plot
@@ -21,10 +23,17 @@ import json
 from collections import defaultdict
 
 from .models import (
-    Transaction, Category, Subcategory, RecurringPayment,
+    Transaction, Category, Subcategory, RecurringPayment, RecurringPaymentPaidDate,
     Investment, InvestmentObservation, BudgetLimit, TransactionType, PaymentFor
 )
 from .forms import TransactionForm, CategoryForm, SubcategoryForm, InvestmentForm, InvestmentValueForm, RecurringPaymentForm
+from .utils import (
+    recurring_list_occurrence_buckets,
+    occurrence_matches_series,
+    first_day_next_calendar_month,
+    first_occurrence_in_month,
+    has_occurrence_in_month,
+)
 
 
 def _first_env_value(names):
@@ -152,6 +161,18 @@ def get_split_user_labels():
         )
         ordered = fallback if len(fallback) == 2 else ['jirka', 'zuzka']
     return ordered[0], ordered[1]
+
+
+def payment_for_badge_class(username):
+    """Stejné třídy jako u investic (owner-badge-*)."""
+    if not username:
+        return 'owner-badge-default'
+    un = username.lower()
+    if un == 'zuzka':
+        return 'owner-badge-zuzka'
+    if un == 'jirka':
+        return 'owner-badge-jirka'
+    return 'owner-badge-default'
 
 
 @login_required
@@ -587,8 +608,7 @@ def predictions(request):
     last_day = monthrange(today.year, today.month)[1]
     current_month_end = today.replace(day=last_day)
     
-    # Očekávané hodnoty z trvalých plateb pro aktuální měsíc
-    recurring_payments = RecurringPayment.objects.filter(active=True)
+    recurring_qs = RecurringPayment.objects.filter(active=True)
     expected_income = Decimal('0')
     expected_expenses = Decimal('0')
     expected_income_user1 = Decimal('0')
@@ -596,123 +616,42 @@ def predictions(request):
     expected_expenses_user1 = Decimal('0')
     expected_expenses_user2 = Decimal('0')
     expected_recurring_list = []
-    
-    for rp in recurring_payments:
-        # Použít typ transakce přímo z trvalé platby
-        transaction_type = rp.transaction_type
-        
-        # Zkontrolovat, zda by tato trvalá platba měla proběhnout v aktuálním měsíci
-        # Zkontrolovat, zda next_payment_date je v aktuálním měsíci
-        # NEBO zda už proběhla v aktuálním měsíci (existuje transakce s datem v aktuálním měsíci)
-        payment_date = rp.next_payment_date
-        should_occur_this_month = current_month_start <= payment_date <= current_month_end
-        
-        # Pokud next_payment_date není v aktuálním měsíci, zkontrolovat, zda už proběhla
-        if not should_occur_this_month:
-            # Zkontrolovat, zda existuje transakce pro tuto trvalou platbu v aktuálním měsíci
-            has_transaction_this_month = Transaction.objects.filter(
-                recurring_payment=rp,
-                date__gte=current_month_start,
-                date__lte=current_month_end
-            ).exists()
-            
-            # Nebo zkontrolovat podle detailů (kategorie, subkategorie, částka, typ)
-            if not has_transaction_this_month and rp.category:
-                has_transaction_this_month = Transaction.objects.filter(
-                    category=rp.category,
-                    subcategory=rp.subcategory,
-                    amount=rp.amount,
-                    transaction_type=rp.transaction_type,
-                    date__gte=current_month_start,
-                    date__lte=current_month_end
-                ).exists()
-            
-            should_occur_this_month = has_transaction_this_month
-        
-        if should_occur_this_month:
-            amount = rp.amount
-            if transaction_type == TransactionType.INCOME:
-                expected_income += amount
-                # Split based on payment_for
-                if rp.payment_for == PaymentFor.SELF:
-                    expected_income_user1 += amount
-                elif rp.payment_for == PaymentFor.PARTNER:
-                    expected_income_user2 += amount
-                elif rp.payment_for == PaymentFor.SHARED:
-                    expected_income_user1 += amount / 2
-                    expected_income_user2 += amount / 2
-            elif transaction_type == TransactionType.EXPENSE:
-                expected_expenses += amount
-                # Split based on payment_for
-                if rp.payment_for == PaymentFor.SELF:
-                    expected_expenses_user1 += amount
-                elif rp.payment_for == PaymentFor.PARTNER:
-                    expected_expenses_user2 += amount
-                elif rp.payment_for == PaymentFor.SHARED:
-                    expected_expenses_user1 += amount / 2
-                    expected_expenses_user2 += amount / 2
-            
-            expected_recurring_list.append({
-                'payment': rp,
-                'type': transaction_type,
-                'amount': rp.amount
-            })
-    
-    # Skutečné hodnoty pro aktuální měsíc - pouze pro trvalé platby
-    # Najít všechny transakce, které odpovídají trvalým platbám z expected_recurring_list
-    actual_income_transaction_ids = []
-    actual_expense_transaction_ids = []
-    
-    for item in expected_recurring_list:
-        rp = item['payment']
-        transaction_type = item['type']
-        
-        # Najít transakce pro tuto trvalou platbu v aktuálním měsíci
-        # 1. Transakce přímo propojené přes recurring_payment
-        matching_transactions = Transaction.objects.filter(
-            recurring_payment=rp,
-            date__gte=current_month_start,
-            date__lte=today,
-            transaction_type=transaction_type
+
+    for rp in recurring_qs:
+        if not has_occurrence_in_month(
+            rp.start_date, rp.frequency_months, current_month_start, current_month_end
+        ):
+            continue
+        od = first_occurrence_in_month(
+            rp.start_date, rp.frequency_months, current_month_start, current_month_end
         )
-        
-        # 2. Transakce, které odpovídají podle detailů (kategorie, subkategorie, částka, typ)
-        if rp.category:
-            matching_by_details = Transaction.objects.filter(
-                category=rp.category,
-                subcategory=rp.subcategory,
-                amount=rp.amount,
-                transaction_type=transaction_type,
-                date__gte=current_month_start,
-                date__lte=today
-            ).exclude(id__in=[t.id for t in matching_transactions])
-            
-            matching_transactions = list(matching_transactions) + list(matching_by_details)
-        
-        # Přidat do příslušného seznamu podle typu
-        for trans in matching_transactions:
-            if transaction_type == TransactionType.INCOME:
-                if trans.id not in actual_income_transaction_ids:
-                    actual_income_transaction_ids.append(trans.id)
-            elif transaction_type == TransactionType.EXPENSE:
-                if trans.id not in actual_expense_transaction_ids:
-                    actual_expense_transaction_ids.append(trans.id)
-    
-    # Vytvořit querysety z nalezených transakcí
-    if actual_income_transaction_ids:
-        actual_income_transactions = Transaction.objects.filter(id__in=actual_income_transaction_ids)
-    else:
-        actual_income_transactions = Transaction.objects.none()
-    
-    if actual_expense_transaction_ids:
-        actual_expense_transactions = Transaction.objects.filter(id__in=actual_expense_transaction_ids)
-    else:
-        actual_expense_transactions = Transaction.objects.none()
-    
+        amount = rp.amount
+        expected_expenses += amount
+        expected_expenses_user1 += amount / 2
+        expected_expenses_user2 += amount / 2
+
+        expected_recurring_list.append({
+            'payment': rp,
+            'amount': rp.amount,
+            'occurrence_date': od,
+        })
+
+    actual_income_transactions = Transaction.objects.filter(
+        date__gte=current_month_start,
+        date__lte=today,
+        transaction_type=TransactionType.INCOME,
+        is_deleted=False,
+    )
+    actual_expense_transactions = Transaction.objects.filter(
+        date__gte=current_month_start,
+        date__lte=today,
+        transaction_type=TransactionType.EXPENSE,
+        is_deleted=False,
+    )
+
     actual_income = actual_income_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
     actual_expenses = actual_expense_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
-    
-    # Calculate split amounts for actual values
+
     actual_income_user1, actual_income_user2 = calculate_split_amounts(actual_income_transactions)
     actual_expenses_user1, actual_expenses_user2 = calculate_split_amounts(actual_expense_transactions)
     
@@ -746,90 +685,63 @@ def predictions(request):
         'current_month_end': current_month_end,
         'split_user1_label': split_user1_label,
         'split_user2_label': split_user2_label,
+        'split_user1_badge_class': payment_for_badge_class(split_user1_label),
+        'split_user2_badge_class': payment_for_badge_class(split_user2_label),
     }
     
     return render(request, 'expenses/predictions.html', context)
 
 
+def _recurring_row_dict(payment, due_date, paid_set):
+    pid = payment.id
+    return {
+        'payment': payment,
+        'display_date': due_date,
+        'is_paid': (pid, due_date) in paid_set,
+    }
+
+
 @login_required
 def recurring_payments(request):
-    """Seznam trvalých plateb"""
+    """Trvalé platby — termíny dopočítané od počátečního data; zaplaceno jen orientačně (bez vazby na transakce)."""
     today = timezone.now().date()
-    next_30_days = today + timedelta(days=30)
-    
-    payments = RecurringPayment.objects.all().order_by('next_payment_date')
-    
-    # Rozdělit na nadcházející (next 30 days) a potvrzené (již vytvořené)
-    # Zobrazit VŠECHNY platby - historické i budoucí
-    upcoming_payments = []
-    confirmed_payments = []
-    historical_payments = []
-    
+
+    payments = list(RecurringPayment.objects.filter(active=True).order_by('start_date', 'name'))
+
+    paid_pairs = set(
+        RecurringPaymentPaidDate.objects.filter(
+            recurring_payment_id__in=[p.id for p in payments]
+        ).values_list('recurring_payment_id', 'due_date')
+    )
+
+    future_rows = []
+    current_rows = []
+    past_rows = []
+
     for payment in payments:
-        # Najít VŠECHNY transakce pro tuto trvalou platbu
-        # 1. Transakce přímo propojené přes recurring_payment
-        linked_transactions = Transaction.objects.filter(
-            recurring_payment=payment
-        ).order_by('-date')
-        
-        # 2. Transakce, které odpovídají podle detailů (kategorie, subkategorie, částka, typ)
-        # ale nejsou propojené přes recurring_payment (pro případ, že byly vytvořeny ručně)
-        matching_transactions = Transaction.objects.filter(
-            category=payment.category,
-            subcategory=payment.subcategory,
-            amount=payment.amount,
-            transaction_type=payment.transaction_type
-        ).filter(
-            Q(recurring_payment__isnull=True) | Q(recurring_payment=payment)
-        ).exclude(
-            id__in=linked_transactions.values_list('id', flat=True)
-        ).order_by('-date')
-        
-        # Kombinovat a seřadit podle data, odstranit duplikáty podle ID
-        all_confirmed_transactions = list(linked_transactions)
-        seen_ids = {t.id for t in all_confirmed_transactions}
-        for t in matching_transactions:
-            if t.id not in seen_ids:
-                all_confirmed_transactions.append(t)
-                seen_ids.add(t.id)
-        
-        all_confirmed_transactions.sort(key=lambda x: x.date, reverse=True)
-        
-        # Zkontrolovat, zda existuje transakce pro aktuální next_payment_date
-        has_current_transaction = Transaction.objects.filter(
-            Q(recurring_payment=payment, date=payment.next_payment_date) |
-            Q(category=payment.category, subcategory=payment.subcategory, 
-              amount=payment.amount, date=payment.next_payment_date,
-              transaction_type=payment.transaction_type)
-        ).exists()
-        
-        is_upcoming = payment.next_payment_date <= next_30_days and payment.next_payment_date >= today
-        is_past = payment.next_payment_date < today
-        
-        # Přidat všechny potvrzené transakce do seznamu
-        for transaction in all_confirmed_transactions:
-            confirmed_payments.append({
-                'payment': payment,
-                'transaction': transaction,
-                'transaction_date': transaction.date,
-                'month': transaction.date.strftime('%Y-%m')
-            })
-        
-        # Pokud není potvrzená a je v příštích 30 dnech, přidat do nadcházejících
-        if not has_current_transaction and is_upcoming:
-            upcoming_payments.append({
-                'payment': payment,
-                'has_transaction': False,
-                'month': payment.next_payment_date.strftime('%Y-%m')
-            })
-        # Pokud není potvrzená a je v minulosti, přidat do historických
-        elif not has_current_transaction and is_past:
-            historical_payments.append({
-                'payment': payment,
-                'has_transaction': False,
-                'month': payment.next_payment_date.strftime('%Y-%m')
-            })
-    
+        next_m, cur, pst = recurring_list_occurrence_buckets(
+            payment.start_date, payment.frequency_months, today
+        )
+        for od in next_m:
+            future_rows.append(_recurring_row_dict(payment, od, paid_pairs))
+        for od in cur:
+            current_rows.append(_recurring_row_dict(payment, od, paid_pairs))
+        for od in pst:
+            past_rows.append(_recurring_row_dict(payment, od, paid_pairs))
+
+    future_rows.sort(key=lambda r: (r['display_date'], r['payment'].id))
+    current_rows.sort(key=lambda r: (r['display_date'], r['payment'].id))
+    past_rows.sort(key=lambda r: (r['display_date'], r['payment'].id), reverse=True)
+
+    month_names = {
+        1: 'Leden', 2: 'Únor', 3: 'Březen', 4: 'Duben',
+        5: 'Květen', 6: 'Červen', 7: 'Červenec', 8: 'Srpen',
+        9: 'Září', 10: 'Říjen', 11: 'Listopad', 12: 'Prosinec',
+    }
+    next_ms = first_day_next_calendar_month(today)
+    next_month_title = f"{month_names.get(next_ms.month, '')} {next_ms.year}"
+    current_month_title = f"{month_names.get(today.month, '')} {today.year}"
+
     if request.method == 'POST':
         form = RecurringPaymentForm(request.POST)
         if form.is_valid():
@@ -838,128 +750,47 @@ def recurring_payments(request):
             return redirect('recurring_payments')
     else:
         form = RecurringPaymentForm()
-    
+
     return render(request, 'expenses/recurring_payments.html', {
-        'upcoming_payments': upcoming_payments,
-        'confirmed_payments': confirmed_payments,
-        'historical_payments': historical_payments,
-        'form': form
+        'future_rows': future_rows,
+        'current_rows': current_rows,
+        'past_rows': past_rows,
+        'form': form,
+        'current_month_title': current_month_title,
+        'next_month_title': next_month_title,
+        'past_from_year': today.year,
     })
 
 
 @login_required
-def create_transaction_from_recurring(request, pk):
-    """Vytvoření transakce z trvalé platby"""
-    recurring_payment = get_object_or_404(RecurringPayment, pk=pk)
-    
-    # Zkontrolovat, zda už existuje transakce pro tuto trvalou platbu a datum
-    existing_by_recurring = Transaction.objects.filter(
-        recurring_payment=recurring_payment,
-        date=recurring_payment.next_payment_date
-    ).first()
-    
-    # Zkontrolovat také podle category, subcategory, amount a date (pro duplikáty)
-    # Toto je hlavní kontrola - pokud existuje transakce s těmito údaji, nelze vytvořit novou
-    existing_by_details = Transaction.objects.filter(
-        category=recurring_payment.category,
-        subcategory=recurring_payment.subcategory,
-        amount=recurring_payment.amount,
-        date=recurring_payment.next_payment_date,
-        transaction_type=recurring_payment.transaction_type
-    ).first()
-    
-    # Použít první nalezenou transakci
-    existing_transaction = existing_by_recurring or existing_by_details
-    
-    # Pokud existuje duplikát podle detailů (ne jen podle recurring_payment), nelze vytvořit
-    if existing_by_details and not existing_by_recurring:
-        messages.warning(request, f'Transakce s těmito údaji (kategorie, subkategorie, částka, datum) již existuje a nemůže být vytvořena znovu.')
+@require_POST
+def recurring_payment_toggle_paid(request):
+    payment_id = request.POST.get('payment_id')
+    due_raw = request.POST.get('due_date')
+    set_paid = request.POST.get('set_paid')
+    payment = get_object_or_404(RecurringPayment, pk=payment_id)
+    due_date = parse_date(due_raw) if due_raw else None
+    if not due_date:
         return redirect('recurring_payments')
-    
-    if request.method == 'POST':
-        if existing_transaction:
-            # Pokud existuje a uživatel potvrdil přepsání
-            if request.POST.get('overwrite') == 'yes':
-                # Aktualizovat existující transakci
-                existing_transaction.amount = recurring_payment.amount
-                existing_transaction.description = recurring_payment.name
-                existing_transaction.transaction_type = recurring_payment.transaction_type
-                existing_transaction.category = recurring_payment.category
-                existing_transaction.subcategory = recurring_payment.subcategory
-                existing_transaction.payment_for = recurring_payment.payment_for
-                existing_transaction.note = recurring_payment.note
-                existing_transaction.save()
-                messages.success(request, f'Transakce "{recurring_payment.name}" byla aktualizována.')
-            else:
-                messages.info(request, 'Transakce nebyla vytvořena.')
-                return redirect('recurring_payments')
+    if not occurrence_matches_series(payment.start_date, payment.frequency_months, due_date):
+        return redirect('recurring_payments')
+    if set_paid == '1':
+        RecurringPaymentPaidDate.objects.get_or_create(
+            recurring_payment=payment, due_date=due_date
+        )
+    elif set_paid == '0':
+        RecurringPaymentPaidDate.objects.filter(
+            recurring_payment=payment, due_date=due_date
+        ).delete()
+    else:
+        existing = RecurringPaymentPaidDate.objects.filter(
+            recurring_payment=payment, due_date=due_date
+        ).first()
+        if existing:
+            existing.delete()
         else:
-            # Zkontrolovat znovu před vytvořením (pro případ, že by někdo mezitím vytvořil)
-            duplicate_check = Transaction.objects.filter(
-                category=recurring_payment.category,
-                subcategory=recurring_payment.subcategory,
-                amount=recurring_payment.amount,
-                date=recurring_payment.next_payment_date,
-                transaction_type=recurring_payment.transaction_type
-            ).exists()
-            
-            if duplicate_check:
-                messages.warning(request, f'Transakce s těmito údaji již existuje a nemůže být vytvořena znovu.')
-                return redirect('recurring_payments')
-            
-            # Vytvořit novou transakci
-            transaction = Transaction.objects.create(
-                amount=recurring_payment.amount,
-                description=recurring_payment.name,
-                transaction_type=recurring_payment.transaction_type,
-                category=recurring_payment.category,
-                subcategory=recurring_payment.subcategory,
-                date=recurring_payment.next_payment_date,
-                payment_for=recurring_payment.payment_for,
-                note=recurring_payment.note,
-                created_by=request.user,
-                recurring_payment=recurring_payment,
-                approved=False
-            )
-            messages.success(request, f'Transakce "{recurring_payment.name}" byla vytvořena.')
-        
-        # Aktualizovat datum další platby - přidat měsíce pouze pokud bude v příštích 30 dnech
-        today = timezone.now().date()
-        next_30_days = today + timedelta(days=30)
-        
-        payment_date = recurring_payment.next_payment_date
-        year = payment_date.year
-        month = payment_date.month + recurring_payment.frequency_months
-        day = payment_date.day
-        
-        # Zpracovat přetečení měsíců
-        while month > 12:
-            month -= 12
-            year += 1
-        
-        # Zkontrolovat, zda den existuje v novém měsíci (např. 31. ledna -> 31. února neexistuje)
-        from calendar import monthrange
-        max_day = monthrange(year, month)[1]
-        if day > max_day:
-            day = max_day
-        
-        from datetime import date
-        new_payment_date = date(year, month, day)
-        
-        # Aktualizovat pouze pokud nové datum je v příštích 30 dnech
-        if new_payment_date <= next_30_days:
-            recurring_payment.next_payment_date = new_payment_date
-            recurring_payment.save()
-        # Pokud nové datum je mimo 30 dní, ponechat původní datum (nebude se zobrazovat v seznamu)
-        
-        return redirect('recurring_payments')
-    
-    # GET request - zobrazit potvrzení
-    context = {
-        'recurring_payment': recurring_payment,
-        'existing_transaction': existing_transaction,
-    }
-    return render(request, 'expenses/confirm_recurring_transaction.html', context)
+            RecurringPaymentPaidDate.objects.create(recurring_payment=payment, due_date=due_date)
+    return redirect('recurring_payments')
 
 
 @login_required
@@ -1145,6 +976,7 @@ def edit_investment(request, pk):
 
 TRANSACTION_IMPORT_SESSION_KEY = "transaction_import_preview"
 INVESTMENT_IMPORT_SESSION_KEY = "investment_import_preview"
+RECURRING_IMPORT_SESSION_KEY = "recurring_import_preview"
 
 
 def _safe_json_dumps(data):
@@ -1236,6 +1068,15 @@ def _observation_duplicate_key(item):
         str(item.get("observation_date") or ""),
         str(item.get("observed_value") or ""),
         (item.get("investment_name") or "").strip().lower(),
+    )
+
+
+def _recurring_duplicate_key(item):
+    return (
+        (item.get("name") or "").strip().lower(),
+        str(item.get("start_date") or ""),
+        str(item.get("amount") or ""),
+        str(item.get("frequency_months") or ""),
     )
 
 
@@ -1495,6 +1336,141 @@ def _build_observation_preview(import_mode, new_items):
     }
 
 
+def _serialize_recurring_for_json(rp):
+    paid = list(rp.paid_dates.order_by("due_date").values_list("due_date", flat=True))
+    return {
+        "id": rp.id,
+        "name": rp.name,
+        "amount": str(rp.amount),
+        "frequency_months": rp.frequency_months,
+        "start_date": rp.start_date.isoformat(),
+        "active": rp.active,
+        "paid_dates": [d.isoformat() for d in paid],
+    }
+
+
+def _build_recurring_export_csv_response(recurring_qs, filename):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow([
+        "ID", "Název", "Částka (Kč)", "Frekvence (měsíce)", "Počáteční datum",
+        "Aktivní", "Uhrazené termíny",
+    ])
+    for rp in recurring_qs:
+        paid = list(rp.paid_dates.order_by("due_date").values_list("due_date", flat=True))
+        paid_str = ";".join(d.isoformat() for d in paid)
+        writer.writerow([
+            rp.id,
+            rp.name,
+            str(rp.amount),
+            rp.frequency_months,
+            rp.start_date.isoformat(),
+            "Ano" if rp.active else "Ne",
+            paid_str,
+        ])
+    return response
+
+
+def _parse_paid_dates_cell(value):
+    if not value and value != 0:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    out = []
+    for part in re.split(r"[;,]", text):
+        part = part.strip()
+        if not part:
+            continue
+        d = _parse_date_or_none(part)
+        if d:
+            out.append(d.isoformat())
+    return out
+
+
+def _sync_recurring_paid_dates(rp, paid_date_strings):
+    rp.paid_dates.all().delete()
+    for s in paid_date_strings or []:
+        d = _parse_date_or_none(s)
+        if not d:
+            continue
+        if not occurrence_matches_series(rp.start_date, rp.frequency_months, d):
+            continue
+        RecurringPaymentPaidDate.objects.get_or_create(recurring_payment=rp, due_date=d)
+
+
+def _normalize_recurring_rows(rows):
+    normalized = []
+    errors = []
+    for idx, row in enumerate(rows, start=1):
+        row_lower = {str(k).strip().lower(): v for k, v in row.items()} if isinstance(row, dict) else {}
+        name = (row_lower.get("název") or row_lower.get("nazev") or row_lower.get("name") or "").strip()
+        amount = _parse_decimal_or_none(
+            row_lower.get("částka (kč)") or row_lower.get("castka (kc)") or row_lower.get("amount")
+        )
+        start_date = _parse_date_or_none(
+            row_lower.get("počáteční datum") or row_lower.get("pocatecni datum") or row_lower.get("start_date")
+        )
+        freq_raw = row_lower.get("frekvence (měsíce)") or row_lower.get("frekvence (mesice)") or row_lower.get("frequency_months")
+        try:
+            frequency_months = int(freq_raw) if freq_raw not in (None, "") else 1
+        except (TypeError, ValueError):
+            frequency_months = 1
+        if frequency_months < 1:
+            frequency_months = 1
+        if not name or amount is None or not start_date:
+            errors.append(f"Řádek {idx}: povinná pole jsou název, částka a počáteční datum.")
+            continue
+        paid_raw = row_lower.get("uhrazené termíny") or row_lower.get("uhrazene terminy") or row_lower.get("paid_dates")
+        paid_dates = _parse_paid_dates_cell(paid_raw)
+        row_id = row_lower.get("id")
+        try:
+            row_id = int(row_id) if row_id not in (None, "") else None
+        except (TypeError, ValueError):
+            row_id = None
+        normalized.append({
+            "id": row_id,
+            "name": name,
+            "amount": str(amount),
+            "frequency_months": frequency_months,
+            "start_date": start_date.isoformat(),
+            "active": _parse_boolean(row_lower.get("aktivní") or row_lower.get("aktivni") or row_lower.get("active"), default=True),
+            "paid_dates": paid_dates,
+        })
+    return normalized, errors
+
+
+def _build_recurring_preview(import_mode, new_items):
+    existing_qs = RecurringPayment.objects.order_by("start_date", "id")
+    existing_items = []
+    for rp in existing_qs:
+        existing_items.append({
+            "id": rp.id,
+            "name": rp.name,
+            "start_date": rp.start_date.isoformat(),
+            "amount": str(rp.amount),
+            "frequency_months": rp.frequency_months,
+        })
+    duplicate_pairs, only_existing, only_incoming = _duplicate_preview_split(
+        existing_items, new_items, _recurring_duplicate_key
+    )
+    return {
+        "dataset": "recurring_payments",
+        "import_mode": import_mode,
+        "existing_count": len(existing_items),
+        "file_count": len(new_items),
+        "overlap_count": len(duplicate_pairs),
+        "duplicate_pairs": duplicate_pairs,
+        "only_existing_count": len(only_existing),
+        "only_incoming_count": len(only_incoming),
+        "only_existing": only_existing,
+        "only_incoming": only_incoming,
+        "new_items": new_items,
+    }
+
+
 @login_required
 def settings(request):
     """Nastavení - kategorie, subkategorie a import/export."""
@@ -1510,6 +1486,7 @@ def settings(request):
     )
     transaction_preview = request.session.get(TRANSACTION_IMPORT_SESSION_KEY)
     observation_preview = request.session.get(INVESTMENT_IMPORT_SESSION_KEY)
+    recurring_preview = request.session.get(RECURRING_IMPORT_SESSION_KEY)
 
     if request.method == 'POST':
         if 'add_category' in request.POST:
@@ -1543,6 +1520,7 @@ def settings(request):
         'transaction_date_range': transaction_date_range,
         'transaction_import_preview': transaction_preview,
         'investment_import_preview': observation_preview,
+        'recurring_import_preview': recurring_preview,
     }
 
     return render(request, 'expenses/settings.html', context)
@@ -1887,10 +1865,161 @@ def import_investment_observations(request):
     return redirect("settings")
 
 
+def _create_recurring_from_import_item(item):
+    rp = RecurringPayment.objects.create(
+        name=item["name"].strip(),
+        amount=_parse_decimal_or_none(item.get("amount")) or Decimal("0"),
+        frequency_months=int(item.get("frequency_months") or 1),
+        start_date=_parse_date_or_none(item.get("start_date")),
+        active=bool(item.get("active", True)),
+    )
+    _sync_recurring_paid_dates(rp, item.get("paid_dates") or [])
+    return rp
+
+
+@login_required
+def export_recurring_payments(request):
+    """Export trvalých plateb (včetně uhrazených termínů) do CSV nebo JSON."""
+    export_format = request.GET.get("format", "csv")
+    recurring_qs = RecurringPayment.objects.prefetch_related("paid_dates").order_by("start_date", "id")
+    filename_base = "trvale_platby"
+    if export_format == "json":
+        payload = {
+            "dataset": "recurring_payments",
+            "exported_at": timezone.now().isoformat(),
+            "count": recurring_qs.count(),
+            "items": [_serialize_recurring_for_json(rp) for rp in recurring_qs],
+        }
+        response = HttpResponse(_safe_json_dumps(payload), content_type="application/json; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename_base}.json"'
+        return response
+    return _build_recurring_export_csv_response(recurring_qs, f"{filename_base}.csv")
+
+
+@login_required
+def import_recurring_payments(request):
+    """Dvoufázový import trvalých plateb z CSV/JSON s náhledem duplicit."""
+    if request.method != "POST":
+        return redirect("settings")
+
+    action = request.POST.get("action", "preview")
+    if action == "cancel":
+        request.session.pop(RECURRING_IMPORT_SESSION_KEY, None)
+        messages.info(request, "Náhled importu trvalých plateb byl zrušen.")
+        return redirect("settings")
+
+    if action == "preview":
+        upload = request.FILES.get("file")
+        import_mode = request.POST.get("import_mode", "append")
+        if not upload:
+            messages.error(request, "Vyberte soubor pro import.")
+            return redirect("settings")
+        if import_mode not in {"append", "replace"}:
+            messages.error(request, "Neplatný režim importu.")
+            return redirect("settings")
+        try:
+            rows = _read_uploaded_rows(upload)
+            normalized_rows, errors = _normalize_recurring_rows(rows)
+            if errors:
+                messages.error(request, "Import se nepodařilo načíst: " + " | ".join(errors[:6]))
+                return redirect("settings")
+            preview = _build_recurring_preview(import_mode, normalized_rows)
+            request.session[RECURRING_IMPORT_SESSION_KEY] = preview
+            messages.info(request, "Náhled importu trvalých plateb je připravený.")
+        except Exception as exc:
+            messages.error(request, f"Chyba při čtení souboru: {exc}")
+        return redirect("settings")
+
+    preview = request.session.get(RECURRING_IMPORT_SESSION_KEY)
+    if not preview:
+        messages.error(request, "Náhled importu vypršel. Nahrajte soubor znovu.")
+        return redirect("settings")
+
+    duplicate_pairs = preview.get("duplicate_pairs") or []
+    dup_decision = request.POST.get("duplicate_decision", "").strip()
+    if duplicate_pairs:
+        if dup_decision not in {"old", "new", "both"}:
+            messages.error(request, "Vyberte hromadnou volbu pro duplicity: starý, nový, nebo oba.")
+            return redirect("settings")
+
+    only_existing_bulk = request.POST.get("only_existing_bulk", "keep")
+    if only_existing_bulk not in {"keep", "drop"}:
+        only_existing_bulk = "keep"
+    only_incoming_bulk = request.POST.get("only_incoming_bulk", "import")
+    if only_incoming_bulk not in {"import", "skip"}:
+        only_incoming_bulk = "import"
+
+    opp_exist = {"keep": "drop", "drop": "keep"}
+    opp_inc = {"import": "skip", "skip": "import"}
+
+    only_existing_keep = {}
+    for row in preview.get("only_existing") or []:
+        oid = row.get("id")
+        if oid is None:
+            continue
+        cb_on = request.POST.get(f"only_existing_apply_{oid}") == "1"
+        eff = _effective_bulk_choice(only_existing_bulk, cb_on, opp_exist)
+        only_existing_keep[oid] = eff == "keep"
+
+    only_incoming_import = {}
+    for entry in preview.get("only_incoming") or []:
+        idx = entry.get("incoming_index")
+        if idx is None:
+            continue
+        cb_on = request.POST.get(f"only_incoming_apply_{idx}") == "1"
+        eff = _effective_bulk_choice(only_incoming_bulk, cb_on, opp_inc)
+        only_incoming_import[idx] = eff == "import"
+
+    imported_count = 0
+    with transaction.atomic():
+        existing_ids_before = set(RecurringPayment.objects.values_list("id", flat=True))
+        keep_old_ids = set()
+
+        for pair in duplicate_pairs:
+            decision = dup_decision
+            old_id = pair["old"].get("id")
+            if old_id:
+                if decision in {"old", "both"}:
+                    keep_old_ids.add(old_id)
+                if decision == "new":
+                    RecurringPayment.objects.filter(pk=old_id).delete()
+            if decision in {"new", "both"}:
+                new_item = pair["new"]
+                _create_recurring_from_import_item(new_item)
+                imported_count += 1
+
+        duplicate_indexes = {pair["incoming_index"] for pair in duplicate_pairs}
+        for index, item in enumerate(preview["new_items"]):
+            if index in duplicate_indexes:
+                continue
+            if not only_incoming_import.get(index, True):
+                continue
+            _create_recurring_from_import_item(item)
+            imported_count += 1
+
+        for oid, want_keep in only_existing_keep.items():
+            if want_keep:
+                keep_old_ids.add(oid)
+            else:
+                RecurringPayment.objects.filter(pk=oid).delete()
+
+        if preview["import_mode"] == "replace":
+            delete_ids = existing_ids_before - keep_old_ids
+            if delete_ids:
+                RecurringPayment.objects.filter(id__in=delete_ids).delete()
+
+    request.session.pop(RECURRING_IMPORT_SESSION_KEY, None)
+    messages.success(
+        request,
+        f"Import trvalých plateb dokončen. Nově zapsáno {imported_count} záznamů, překryvy vyřešeny: {len(duplicate_pairs)}.",
+    )
+    return redirect("settings")
+
+
 @login_required
 def download_import_template(request, dataset, template_format):
-    """Stažení šablony importu pro transakce nebo pozorování investic."""
-    if dataset not in {"transactions", "investment_observations"}:
+    """Stažení šablony importu pro transakce, pozorování investic nebo trvalé platby."""
+    if dataset not in {"transactions", "investment_observations", "recurring_payments"}:
         messages.error(request, "Neznámý typ šablony.")
         return redirect("settings")
     if template_format not in {"csv", "json"}:
@@ -1912,13 +2041,24 @@ def download_import_template(request, dataset, template_format):
             "Investiční skupina": "",
         }
         filename_base = "template_import_transakce"
-    else:
+    elif dataset == "investment_observations":
         sample = {
             "Investiční skupina": "S&P 500 ETF",
             "Pozorovaná hodnota": "154320.50",
             "Datum pozorování": "2026-05-01",
         }
         filename_base = "template_import_investice_pozorovani"
+    else:
+        sample = {
+            "ID": "",
+            "Název": "Nájem",
+            "Částka (Kč)": "12000.00",
+            "Frekvence (měsíce)": "1",
+            "Počáteční datum": "2026-01-05",
+            "Aktivní": "Ano",
+            "Uhrazené termíny": "2026-05-05",
+        }
+        filename_base = "template_import_trvale_platby"
 
     if template_format == "json":
         payload = {"dataset": dataset, "items": [sample]}

@@ -23,33 +23,15 @@
                         <label class="form-label">{{ form.amount.label }}</label>
                         {{ form.amount }}
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">{{ form.transaction_type.label }}</label>
-                        {{ form.transaction_type }}
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">{{ form.category.label }}</label>
-                            {{ form.category }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">{{ form.subcategory.label }}</label>
-                            {{ form.subcategory }}
-                        </div>
-                    </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">{{ form.frequency_months.label }}</label>
                             {{ form.frequency_months }}
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">{{ form.next_payment_date.label }}</label>
-                            {{ form.next_payment_date }}
+                            <label class="form-label">{{ form.start_date.label }}</label>
+                            {{ form.start_date }}
                         </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">{{ form.payment_for.label }}</label>
-                        {{ form.payment_for }}
                     </div>
                     <div class="mb-3">
                         <div class="form-check">
@@ -58,10 +40,6 @@
                                 {{ form.active.label }}
                             </label>
                         </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">{{ form.note.label }}</label>
-                        {{ form.note }}
                     </div>
                     <button type="submit" class="btn btn-primary w-100">
                         <i class="bi bi-save"></i> Uložit
@@ -79,189 +57,218 @@
                 </h4>
             </div>
             <div class="card-body">
+                {% with colspan=5 %}
+                {% if future_rows or current_rows %}
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-hover recurring-section-table mb-0">
                         <thead>
                             <tr>
                                 <th>Název</th>
-                                <th>Typ</th>
                                 <th>Částka</th>
                                 <th>Frekvence</th>
-                                <th>Další platba</th>
-                                <th>Za koho</th>
-                                <th>Status</th>
+                                <th>Termín</th>
+                                <th>Úhrada</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% if upcoming_payments or confirmed_payments or historical_payments %}
-                                {% if upcoming_payments %}
-                                    <tr class="section-header">
-                                        <td colspan="7" style="background-color: #e3f2fd; font-weight: bold; padding: 12px; border-bottom: 3px solid #2196f3;">
-                                            <i class="bi bi-calendar-event"></i> Nadcházející platby (příštích 30 dní)
-                                        </td>
-                                    </tr>
-                                    {% for item in upcoming_payments %}
-                                    <tr class="recurring-payment-row" 
-                                        data-payment-id="{{ item.payment.id }}"
-                                        style="cursor: pointer;"
-                                        onclick="window.location.href='{% url 'create_transaction_from_recurring' item.payment.id %}'">
-                                        <td>{{ item.payment.name }}</td>
-                                        <td>
-                                            {% if item.payment.transaction_type == 'INCOME' %}
-                                                <span class="badge bg-success">Příjem</span>
-                                            {% else %}
-                                                <span class="badge bg-danger">Výdaj</span>
-                                            {% endif %}
-                                        </td>
-                                        <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
-                                        <td>Každých {{ item.payment.frequency_months }} měsíců</td>
-                                        <td>{{ item.payment.next_payment_date|date:"d.m.Y" }}</td>
-                                        <td>{{ item.payment.get_payment_for_display }}</td>
-                                        <td>
-                                            {% if item.payment.active %}
-                                                <span class="badge bg-success">Aktivní</span>
-                                            {% else %}
-                                                <span class="badge bg-secondary">Neaktivní</span>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% endif %}
-                                
-                                {% if confirmed_payments %}
-                                    {% if upcoming_payments %}
-                                        <tr class="section-separator">
-                                            <td colspan="7" style="border-top: 3px solid #dee2e6; padding: 0;"></td>
-                                        </tr>
-                                    {% endif %}
-                                    <tr class="section-header">
-                                        <td colspan="7" style="background-color: #f5f5f5; font-weight: bold; padding: 12px; border-bottom: 3px solid #9e9e9e;">
-                                            <i class="bi bi-check-circle"></i> Potvrzené platby
-                                        </td>
-                                    </tr>
-                                    {% for item in confirmed_payments %}
-                                    <tr class="recurring-payment-row has-transaction" 
-                                        data-payment-id="{{ item.payment.id }}"
-                                        style="opacity: 0.6; cursor: not-allowed;">
-                                        <td>
-                                            {{ item.payment.name }}
-                                            <span class="badge bg-secondary ms-2" title="Transakce již byla vytvořena">
-                                                <i class="bi bi-check-circle"></i> Potvrzeno
-                                            </span>
-                                        </td>
-                                        <td>
-                                            {% if item.payment.transaction_type == 'INCOME' %}
-                                                <span class="badge bg-success">Příjem</span>
-                                            {% else %}
-                                                <span class="badge bg-danger">Výdaj</span>
-                                            {% endif %}
-                                        </td>
-                                        <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
-                                        <td>Každých {{ item.payment.frequency_months }} měsíců</td>
-                                        <td>
-                                            {% if item.transaction_date %}
-                                                {{ item.transaction_date|date:"d.m.Y" }}
-                                            {% else %}
-                                                {{ item.payment.next_payment_date|date:"d.m.Y" }}
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ item.payment.get_payment_for_display }}</td>
-                                        <td>
-                                            {% if item.payment.active %}
-                                                <span class="badge bg-success">Aktivní</span>
-                                            {% else %}
-                                                <span class="badge bg-secondary">Neaktivní</span>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% endif %}
-                                
-                                {% if historical_payments %}
-                                    {% if upcoming_payments or confirmed_payments %}
-                                        <tr class="section-separator">
-                                            <td colspan="7" style="border-top: 3px solid #dee2e6; padding: 0;"></td>
-                                        </tr>
-                                    {% endif %}
-                                    <tr class="section-header">
-                                        <td colspan="7" style="background-color: #fff3cd; font-weight: bold; padding: 12px; border-bottom: 3px solid #ffc107;">
-                                            <i class="bi bi-clock-history"></i> Historické platby (nebyly potvrzeny)
-                                        </td>
-                                    </tr>
-                                    {% for item in historical_payments %}
-                                    <tr class="recurring-payment-row" 
-                                        data-payment-id="{{ item.payment.id }}"
-                                        style="opacity: 0.7; cursor: pointer;"
-                                        onclick="window.location.href='{% url 'create_transaction_from_recurring' item.payment.id %}'">
-                                        <td>
-                                            {{ item.payment.name }}
-                                            <span class="badge bg-warning ms-2" title="Platba v minulosti, nebyla potvrzena">
-                                                <i class="bi bi-exclamation-triangle"></i> Minulost
-                                            </span>
-                                        </td>
-                                        <td>
-                                            {% if item.payment.transaction_type == 'INCOME' %}
-                                                <span class="badge bg-success">Příjem</span>
-                                            {% else %}
-                                                <span class="badge bg-danger">Výdaj</span>
-                                            {% endif %}
-                                        </td>
-                                        <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
-                                        <td>Každých {{ item.payment.frequency_months }} měsíců</td>
-                                        <td>{{ item.payment.next_payment_date|date:"d.m.Y" }}</td>
-                                        <td>{{ item.payment.get_payment_for_display }}</td>
-                                        <td>
-                                            {% if item.payment.active %}
-                                                <span class="badge bg-success">Aktivní</span>
-                                            {% else %}
-                                                <span class="badge bg-secondary">Neaktivní</span>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% endif %}
-                            {% else %}
-                                <tr>
-                                    <td colspan="7" class="text-center text-muted">Žádné trvalé platby</td>
-                                </tr>
+                            {% if future_rows %}
+                            <tr class="section-header">
+                                <td colspan="{{ colspan }}" class="recurring-section-heading recurring-section-future">
+                                    <i class="bi bi-calendar-plus"></i> Následující měsíc — {{ next_month_title }}
+                                </td>
+                            </tr>
+                            {% for item in future_rows %}
+                            <tr class="recurring-payment-row {% if item.is_paid %}recurring-paid-row{% endif %}">
+                                <td>{{ item.payment.name }}</td>
+                                <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
+                                <td>{{ item.payment.frequency_months }} měsíců</td>
+                                <td>{{ item.display_date|date:"d.m.Y" }}</td>
+                                <td class="align-middle text-nowrap">
+                                    <form method="post" action="{% url 'recurring_payment_toggle_paid' %}" class="d-flex align-items-center gap-2 mb-0">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="payment_id" value="{{ item.payment.pk }}">
+                                        <input type="hidden" name="due_date" value="{{ item.display_date|date:'Y-m-d' }}">
+                                        <input type="hidden" name="set_paid" value="{% if item.is_paid %}1{% else %}0{% endif %}">
+                                        <div class="form-check form-switch m-0">
+                                            <input class="form-check-input" type="checkbox" role="switch"
+                                                aria-label="Zaplaceno"
+                                                {% if item.is_paid %}checked{% endif %}
+                                                onchange="var h=this.form.querySelector('input[name=set_paid]');h.value=this.checked?'1':'0';this.form.submit();">
+                                        </div>
+                                        <span class="small recurring-paid-label {% if item.is_paid %}text-muted{% endif %}">{% if item.is_paid %}Zaplaceno{% else %}Nezaplaceno{% endif %}</span>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% endif %}
+
+                            {% if future_rows and current_rows %}
+                            <tr class="section-divider"><td colspan="{{ colspan }}"></td></tr>
+                            {% endif %}
+
+                            {% if current_rows %}
+                            <tr class="section-header">
+                                <td colspan="{{ colspan }}" class="recurring-section-heading recurring-section-current">
+                                    <i class="bi bi-calendar-day"></i> Aktuální měsíc — {{ current_month_title }}
+                                </td>
+                            </tr>
+                            {% for item in current_rows %}
+                            <tr class="recurring-payment-row {% if item.is_paid %}recurring-paid-row{% endif %}">
+                                <td>{{ item.payment.name }}</td>
+                                <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
+                                <td>{{ item.payment.frequency_months }} měsíců</td>
+                                <td>{{ item.display_date|date:"d.m.Y" }}</td>
+                                <td class="align-middle text-nowrap">
+                                    <form method="post" action="{% url 'recurring_payment_toggle_paid' %}" class="d-flex align-items-center gap-2 mb-0">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="payment_id" value="{{ item.payment.pk }}">
+                                        <input type="hidden" name="due_date" value="{{ item.display_date|date:'Y-m-d' }}">
+                                        <input type="hidden" name="set_paid" value="{% if item.is_paid %}1{% else %}0{% endif %}">
+                                        <div class="form-check form-switch m-0">
+                                            <input class="form-check-input" type="checkbox" role="switch"
+                                                aria-label="Zaplaceno"
+                                                {% if item.is_paid %}checked{% endif %}
+                                                onchange="var h=this.form.querySelector('input[name=set_paid]');h.value=this.checked?'1':'0';this.form.submit();">
+                                        </div>
+                                        <span class="small recurring-paid-label {% if item.is_paid %}text-muted{% endif %}">{% if item.is_paid %}Zaplaceno{% else %}Nezaplaceno{% endif %}</span>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
                             {% endif %}
                         </tbody>
                     </table>
                 </div>
+                {% endif %}
+
+                {% if past_rows %}
+                {% if future_rows or current_rows %}
+                <div class="recurring-between-sections border-top border-2 my-2"></div>
+                {% endif %}
+                <div class="table-responsive recurring-past-scroll mt-0">
+                    <table class="table table-hover recurring-section-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Název</th>
+                                <th>Částka</th>
+                                <th>Frekvence</th>
+                                <th>Termín</th>
+                                <th>Úhrada</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="section-header">
+                                <td colspan="{{ colspan }}" class="recurring-section-heading recurring-section-past">
+                                    <i class="bi bi-clock-history"></i> Starší měsíce
+                                    <span class="fw-normal text-muted small ms-1">(od 1. 1. {{ past_from_year }})</span>
+                                </td>
+                            </tr>
+                            {% for item in past_rows %}
+                            <tr class="recurring-payment-row {% if item.is_paid %}recurring-paid-row{% endif %}">
+                                <td>{{ item.payment.name }}</td>
+                                <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
+                                <td>{{ item.payment.frequency_months }} měsíců</td>
+                                <td>{{ item.display_date|date:"d.m.Y" }}</td>
+                                <td class="align-middle text-nowrap">
+                                    <form method="post" action="{% url 'recurring_payment_toggle_paid' %}" class="d-flex align-items-center gap-2 mb-0">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="payment_id" value="{{ item.payment.pk }}">
+                                        <input type="hidden" name="due_date" value="{{ item.display_date|date:'Y-m-d' }}">
+                                        <input type="hidden" name="set_paid" value="{% if item.is_paid %}1{% else %}0{% endif %}">
+                                        <div class="form-check form-switch m-0">
+                                            <input class="form-check-input" type="checkbox" role="switch"
+                                                aria-label="Zaplaceno"
+                                                {% if item.is_paid %}checked{% endif %}
+                                                onchange="var h=this.form.querySelector('input[name=set_paid]');h.value=this.checked?'1':'0';this.form.submit();">
+                                        </div>
+                                        <span class="small recurring-paid-label {% if item.is_paid %}text-muted{% endif %}">{% if item.is_paid %}Zaplaceno{% else %}Nezaplaceno{% endif %}</span>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                {% if not future_rows and not current_rows and not past_rows %}
+                <p class="text-center text-muted mb-0">Žádné aktivní trvalé platby</p>
+                {% endif %}
+                {% endwith %}
             </div>
         </div>
     </div>
 </div>
 
 <style>
-    .recurring-payment-row:hover:not(.has-transaction) {
-        background-color: #f8f9fa;
+    .owner-badge-jirka {
+        background-color: #6d4c41;
+        color: #fff;
     }
-    .recurring-payment-row.has-transaction {
-        cursor: not-allowed !important;
+    .owner-badge-zuzka {
+        background-color: #d4af37;
+        color: #2c2416;
     }
-    .section-separator td {
-        height: 0;
+    .owner-badge-default {
+        background-color: #6c757d;
+        color: #fff;
+    }
+    .recurring-section-heading {
+        font-weight: bold;
+        padding: 12px !important;
+        border-bottom: 3px solid rgba(0,0,0,0.12);
+    }
+    .recurring-section-future {
+        background-color: #e3f2fd;
+        border-bottom-color: #2196f3 !important;
+    }
+    .recurring-section-current {
+        background-color: #e8f5e9;
+        border-bottom-color: #4caf50 !important;
+    }
+    .recurring-section-past {
+        background-color: #fafafa;
+        border-bottom-color: #9e9e9e !important;
+    }
+    .section-divider td {
+        border-top: 3px solid #dee2e6;
         padding: 0 !important;
+        height: 0;
     }
-    .section-header td {
-        border-bottom: 3px solid;
+    /* Zaplacený řádek — celý řádek působí neaktivně (Bootstrap table kreslí na buňky) */
+    .recurring-section-table > tbody > tr.recurring-paid-row > td {
+        background-color: #dee2e6 !important;
+        color: #868e96 !important;
+        --bs-table-bg-state: #dee2e6;
+        --bs-table-color-state: #868e96;
+    }
+    .recurring-section-table > tbody > tr.recurring-paid-row > td strong {
+        color: #868e96 !important;
+        font-weight: 500;
+    }
+    .recurring-section-table.table-hover > tbody > tr.recurring-paid-row:hover > td {
+        background-color: #d3d8dc !important;
+        color: #6c757d !important;
+    }
+    .recurring-section-table > tbody > tr.recurring-paid-row .badge {
+        opacity: 0.72;
+        filter: grayscale(0.25);
+    }
+    .recurring-section-table > tbody > tr.recurring-paid-row .form-check-input {
+        opacity: 0.85;
+    }
+    .recurring-section-table > tbody > tr.recurring-paid-row .recurring-paid-label {
+        color: #868e96 !important;
+    }
+    .recurring-past-scroll {
+        max-height: min(420px, 55vh);
+        overflow-y: auto;
+        border-top: 1px solid #dee2e6;
     }
 </style>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const rows = document.querySelectorAll('.recurring-payment-row:not(.has-transaction)');
-        rows.forEach(row => {
-            row.addEventListener('mouseenter', function() {
-                this.style.backgroundColor = '#f0f0f0';
-            });
-            row.addEventListener('mouseleave', function() {
-                this.style.backgroundColor = '';
-            });
-        });
-        
-        // Prevent mouse wheel from changing value in amount field
         const amountField = document.getElementById('{{ form.amount.id_for_label }}');
         if (amountField) {
             amountField.addEventListener('wheel', function(e) {
@@ -273,4 +280,3 @@
     });
 </script>
 {% endblock %}
-

@@ -26,18 +26,6 @@
                 <div class="row mb-3">
                     <div class="col-12">
                         <div class="stat-card">
-                            <div class="stat-label">Očekávané příjmy</div>
-                            <div class="stat-value income">{{ expected_income|czech_int }} Kč</div>
-                            <div class="stat-split">
-                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ expected_income_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ expected_income_user2|czech_int }} Kč</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row mb-3">
-                    <div class="col-12">
-                        <div class="stat-card">
                             <div class="stat-label">Očekávané výdaje</div>
                             <div class="stat-value expense">{{ expected_expenses|czech_int }} Kč</div>
                             <div class="stat-split">
@@ -104,28 +92,18 @@
                         <thead>
                             <tr>
                                 <th>Název</th>
-                                <th>Typ</th>
                                 <th>Částka</th>
                                 <th>Frekvence</th>
                                 <th>Datum platby</th>
-                                <th>Za koho</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in expected_recurring_list %}
                             <tr>
                                 <td>{{ item.payment.name }}</td>
-                                <td>
-                                    {% if item.type == 'INCOME' %}
-                                        <span class="badge bg-success">Příjem</span>
-                                    {% else %}
-                                        <span class="badge bg-danger">Výdaj</span>
-                                    {% endif %}
-                                </td>
                                 <td><strong>{{ item.amount|czech_int }} Kč</strong></td>
-                                <td>Každých {{ item.payment.frequency_months }} měsíců</td>
-                                <td>{{ item.payment.next_payment_date|date:"d.m.Y" }}</td>
-                                <td>{{ item.payment.get_payment_for_display }}</td>
+                                <td>{{ item.payment.frequency_months }} měsíců</td>
+                                <td>{{ item.occurrence_date|date:"d.m.Y" }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -136,5 +114,20 @@
     </div>
 </div>
 {% endif %}
+
+<style>
+    .owner-badge-jirka {
+        background-color: #6d4c41;
+        color: #fff;
+    }
+    .owner-badge-zuzka {
+        background-color: #d4af37;
+        color: #2c2416;
+    }
+    .owner-badge-default {
+        background-color: #6c757d;
+        color: #fff;
+    }
+</style>
 {% endblock %}
 
