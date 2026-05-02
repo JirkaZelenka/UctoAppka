@@ -96,13 +96,20 @@ class Transaction(models.Model):
     
     # Další
     note = models.TextField(blank=True, verbose_name="Poznámka")
-    is_recurring = models.BooleanField(default=False, verbose_name="Trvalá platba")
     approved = models.BooleanField(default=False, verbose_name="Schváleno")
     is_imported = models.BooleanField(default=False, verbose_name="Importováno")
     is_deleted = models.BooleanField(default=False, verbose_name="Smazáno")
     
     # Pro investice - link na investiční skupinu
     investment = models.ForeignKey('Investment', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', verbose_name="Investiční skupina")
+    institution = models.ForeignKey(
+        'Institution',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="Instituce",
+    )
     
     class Meta:
         verbose_name = "Transakce"
@@ -120,6 +127,11 @@ class RecurringPayment(models.Model):
     frequency_months = models.IntegerField(default=1, verbose_name="Frekvence (měsíce)")
     start_date = models.DateField(verbose_name="Počáteční datum platby")
     active = models.BooleanField(default=True, verbose_name="Aktivní")
+    permanent = models.BooleanField(
+        default=False,
+        verbose_name="Trvalé",
+        help_text="Dlouhodobá závazná platba, obtížně zrušitelná",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -155,6 +167,35 @@ class RecurringPaymentPaidDate(models.Model):
     
     def __str__(self):
         return f"{self.recurring_payment_id} @ {self.due_date}"
+
+
+class Institution(models.Model):
+    """Banka, pojišťovna, poskytovatel služeb apod."""
+    name = models.CharField(max_length=200, verbose_name="Jméno")
+    service_description = models.TextField(blank=True, verbose_name="Popis služby")
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='institutions',
+        verbose_name="Vlastník",
+    )
+    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Cena")
+    frequency = models.CharField(max_length=200, blank=True, verbose_name="Frekvence")
+    start_date = models.DateField(null=True, blank=True, verbose_name="Start")
+    end_date = models.DateField(null=True, blank=True, verbose_name="Konec")
+    contact = models.TextField(blank=True, verbose_name="Kontakt")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Instituce"
+        verbose_name_plural = "Instituce"
+        ordering = ['name', 'id']
+
+    def __str__(self):
+        return self.name
 
 
 class Investment(models.Model):

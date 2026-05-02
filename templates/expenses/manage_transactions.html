@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load czech_filters %}
 
-{% block title %}Upravovat transakce - UctoAppka{% endblock %}
+{% block title %}Transakce - UctoAppka{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -73,7 +73,7 @@
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0">
-                    <i class="bi bi-pencil-square"></i> Upravovat transakce
+                    <i class="bi bi-pencil-square"></i> Transakce
                 </h4>
             </div>
             <div class="card-body">
@@ -167,10 +167,8 @@
                                                     {{ form.months_duration }}
                                                 </div>
                                                 <div class="col-md-6 mb-3">
-                                                    <div class="form-check form-switch pt-4">
-                                                        {{ form.is_recurring }}
-                                                        <label class="form-check-label" for="{{ form.is_recurring.id_for_label }}">Trvalé platby (ANO/NE)</label>
-                                                    </div>
+                                                    <label class="form-label">{{ form.institution.label }}</label>
+                                                    {{ form.institution }}
                                                 </div>
                                             </div>
                                         </div>

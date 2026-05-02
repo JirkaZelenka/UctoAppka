@@ -59,13 +59,13 @@
                             {{ form.payment_for }}
                         </div>
                         <div class="col-md-6 mb-3">
-                            <div class="form-check form-switch mt-4 mb-2">
-                                {{ form.is_recurring }}
-                                <label class="form-check-label" for="{{ form.is_recurring.id_for_label }}">
-                                    Trvalá platba (ANO/NE)
-                                </label>
-                            </div>
-                            <div class="form-check mt-4">
+                            <label class="form-label">{{ form.institution.label }}</label>
+                            {{ form.institution }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-2">
                                 {{ form.approved }}
                                 <label class="form-check-label" for="{{ form.approved.id_for_label }}">
                                     {{ form.approved.label }}

@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+{% load czech_filters %}
+
+{% block title %}Instituce - UctoAppka{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-xl-2 col-lg-3 col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-plus-circle"></i> Přidat instituci
+                </h4>
+            </div>
+            <div class="card-body">
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                {% endif %}
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.name.label }}</label>
+                        {{ form.name }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.service_description.label }}</label>
+                        {{ form.service_description }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.owner.label }}</label>
+                        {{ form.owner }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.price.label }}</label>
+                        {{ form.price }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.frequency.label }}</label>
+                        {{ form.frequency }}
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.start_date.label }}</label>
+                            {{ form.start_date }}
+                            {% if form.start_date.errors %}<div class="text-danger small">{{ form.start_date.errors }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ form.end_date.label }}</label>
+                            {{ form.end_date }}
+                            {% if form.end_date.errors %}<div class="text-danger small">{{ form.end_date.errors }}</div>{% endif %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.contact.label }}</label>
+                        {{ form.contact }}
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-save"></i> Uložit
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-10 col-lg-9 col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-bank"></i> Seznam institucí
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover institutions-list-table">
+                        <thead>
+                            <tr>
+                                <th><a class="text-decoration-none text-dark" href="?sort=name&order={% if sort_by == 'name' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Jméno {% if sort_by == 'name' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=service&order={% if sort_by == 'service' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Popis služby {% if sort_by == 'service' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=owner&order={% if sort_by == 'owner' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Vlastník {% if sort_by == 'owner' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?sort=price&order={% if sort_by == 'price' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Cena {% if sort_by == 'price' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=frequency&order={% if sort_by == 'frequency' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Frekvence {% if sort_by == 'frequency' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?sort=total&order={% if sort_by == 'total' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Celkem vyplaceno {% if sort_by == 'total' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?sort=start&order={% if sort_by == 'start' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Start {% if sort_by == 'start' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?sort=end&order={% if sort_by == 'end' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Konec {% if sort_by == 'end' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?sort=contact&order={% if sort_by == 'contact' and sort_order == 'asc' %}desc{% else %}asc{% endif %}">Kontakt {% if sort_by == 'contact' %}{% if sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th>Akce</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                            {% with inst=row.institution %}
+                            <tr class="institution-main-row {{ row.owner_row_class }} {% if row.transactions %}clickable-institution-row{% endif %}" {% if row.transactions %}data-target-class="inst-tx-{{ inst.pk }}"{% endif %}>
+                                <td><strong>{{ inst.name }}</strong></td>
+                                <td class="small">{{ inst.service_description|truncatechars:40 }}</td>
+                                <td>
+                                    {% if inst.owner %}
+                                        <span class="badge {{ row.owner_badge_class }}">{{ inst.owner.username }}</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-nowrap"><strong>{{ inst.price|czech_int }} Kč</strong></td>
+                                <td>{{ inst.frequency|default:"-" }}</td>
+                                <td class="text-nowrap"><strong>{{ row.total_paid|czech_int }} Kč</strong></td>
+                                <td class="text-nowrap">{% if inst.start_date %}{{ inst.start_date|date:"d.m.Y" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                                <td class="text-nowrap">{% if inst.end_date %}{{ inst.end_date|date:"d.m.Y" }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                                <td class="small">{{ inst.contact|truncatechars:24 }}</td>
+                                <td><a href="{% url 'edit_institution' inst.pk %}" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation();"><i class="bi bi-pencil"></i></a></td>
+                            </tr>
+                            {% if row.transactions %}
+                            <tr class="institution-tx-row inst-tx-{{ inst.pk }} d-none">
+                                <td colspan="10" class="p-0 border-0">
+                                    <div class="px-3 py-2 bg-light border-top">
+                                        <div class="small text-muted mb-2">Související platby (transakce) — nejnovější nahoře</div>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-bordered mb-0 bg-white">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Datum</th>
+                                                        <th>Typ</th>
+                                                        <th>Popis</th>
+                                                        <th>Částka</th>
+                                                        <th></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for tx in row.transactions %}
+                                                    <tr>
+                                                        <td>{{ tx.date|date:"d.m.Y" }}</td>
+                                                        <td>{{ tx.get_transaction_type_display }}</td>
+                                                        <td>{{ tx.description }}</td>
+                                                        <td><strong>{{ tx.amount|czech_int }} Kč</strong></td>
+                                                        <td><a href="{% url 'edit_transaction' tx.pk %}" class="btn btn-sm btn-outline-secondary">Upravit</a></td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endwith %}
+                            {% empty %}
+                            <tr>
+                                <td colspan="10" class="text-center text-muted">Zatím žádné instituce</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<style>
+.clickable-institution-row {
+    cursor: pointer;
+}
+
+.owner-jirka-row > td {
+    background-color: #e6d0b3;
+}
+
+.owner-zuzka-row > td {
+    background-color: #fff3bf;
+}
+
+.owner-jirka-row.clickable-institution-row:hover > td {
+    background-color: #c9a86c;
+}
+
+.owner-zuzka-row.clickable-institution-row:hover > td {
+    background-color: #f0c14b;
+}
+
+.clickable-institution-row:not(.owner-jirka-row):not(.owner-zuzka-row):hover > td {
+    background-color: #e9ecef;
+}
+
+.owner-badge-jirka {
+    background-color: #6d4c41;
+    color: #fff;
+}
+
+.owner-badge-zuzka {
+    background-color: #d4af37;
+    color: #2c2416;
+}
+
+.owner-badge-default {
+    background-color: #6c757d;
+    color: #fff;
+}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.clickable-institution-row').forEach(function (row) {
+        row.addEventListener('click', function (event) {
+            if (event.target.closest('a, button')) {
+                return;
+            }
+            var targetClass = row.getAttribute('data-target-class');
+            if (!targetClass) return;
+            document.querySelectorAll('.' + targetClass).forEach(function (detailsRow) {
+                detailsRow.classList.toggle('d-none');
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

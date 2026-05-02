@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Sum, Q, Min, Max
+from django.db.models import Sum, Q, Min, Max, Prefetch
 from django.utils import timezone
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods, require_POST
@@ -24,9 +24,12 @@ from collections import defaultdict
 
 from .models import (
     Transaction, Category, Subcategory, RecurringPayment, RecurringPaymentPaidDate,
-    Investment, InvestmentObservation, BudgetLimit, TransactionType, PaymentFor
+    Investment, InvestmentObservation, Institution, BudgetLimit, TransactionType, PaymentFor
 )
-from .forms import TransactionForm, CategoryForm, SubcategoryForm, InvestmentForm, InvestmentValueForm, RecurringPaymentForm
+from .forms import (
+    TransactionForm, CategoryForm, SubcategoryForm, InvestmentForm, InvestmentValueForm,
+    RecurringPaymentForm, InstitutionForm,
+)
 from .utils import (
     recurring_list_occurrence_buckets,
     occurrence_matches_series,
@@ -751,6 +754,48 @@ def recurring_payments(request):
     else:
         form = RecurringPaymentForm()
 
+    # Přehled: každá aktivní trvalá platba právě jednou; celkem za rok = částka × (12 / frekvence v měsících)
+    sort_by = request.GET.get('summary_sort', 'yearly')
+    sort_order = request.GET.get('summary_order', 'desc')
+    if sort_order not in ('asc', 'desc'):
+        sort_order = 'desc'
+    if sort_by not in ('name', 'amount', 'frequency', 'yearly'):
+        sort_by = 'yearly'
+
+    summary_rows = []
+    for p in payments:
+        fm = p.frequency_months if p.frequency_months and p.frequency_months >= 1 else 1
+        yearly_total = (p.amount * Decimal('12')) / Decimal(fm)
+        summary_rows.append({
+            'payment': p,
+            'yearly_total': yearly_total,
+        })
+
+    def _summary_sort_key(row):
+        pay = row['payment']
+        if sort_by == 'name':
+            return (pay.name or '').lower()
+        if sort_by == 'amount':
+            return pay.amount or Decimal('0')
+        if sort_by == 'frequency':
+            return pay.frequency_months or 0
+        return row['yearly_total']
+
+    summary_rows.sort(key=_summary_sort_key, reverse=(sort_order == 'desc'))
+
+    summary_perm_yearly = sum(
+        (r['yearly_total'] for r in summary_rows if r['payment'].permanent),
+        start=Decimal('0'),
+    )
+    summary_non_yearly = sum(
+        (r['yearly_total'] for r in summary_rows if not r['payment'].permanent),
+        start=Decimal('0'),
+    )
+    summary_total_yearly = sum((r['yearly_total'] for r in summary_rows), start=Decimal('0'))
+    summary_perm_monthly = summary_perm_yearly / Decimal('12')
+    summary_non_monthly = summary_non_yearly / Decimal('12')
+    summary_total_monthly = summary_total_yearly / Decimal('12')
+
     return render(request, 'expenses/recurring_payments.html', {
         'future_rows': future_rows,
         'current_rows': current_rows,
@@ -759,6 +804,15 @@ def recurring_payments(request):
         'current_month_title': current_month_title,
         'next_month_title': next_month_title,
         'past_from_year': today.year,
+        'summary_rows': summary_rows,
+        'summary_sort_by': sort_by,
+        'summary_sort_order': sort_order,
+        'summary_perm_monthly': summary_perm_monthly,
+        'summary_perm_yearly': summary_perm_yearly,
+        'summary_non_monthly': summary_non_monthly,
+        'summary_non_yearly': summary_non_yearly,
+        'summary_total_monthly': summary_total_monthly,
+        'summary_total_yearly': summary_total_yearly,
     })
 
 
@@ -974,9 +1028,111 @@ def edit_investment(request, pk):
     })
 
 
+@login_required
+def institutions(request):
+    """Seznam institucí (banky, pojišťovny, …) s rozbalením souvisejících transakcí."""
+    tx_prefetch = Prefetch(
+        'transactions',
+        queryset=Transaction.objects.filter(is_deleted=False).select_related(
+            'category', 'subcategory'
+        ).order_by('-date', '-created_at'),
+    )
+    institutions_qs = Institution.objects.select_related('owner').prefetch_related(tx_prefetch).order_by('name', 'id')
+
+    sort_by = request.GET.get('sort', 'name')
+    sort_order = request.GET.get('order', 'asc')
+    if sort_order not in ['asc', 'desc']:
+        sort_order = 'asc'
+
+    rows = []
+    for inst in institutions_qs:
+        tx_list = list(inst.transactions.all())
+        total_paid = sum((t.amount for t in tx_list), start=Decimal('0'))
+        owner = inst.owner
+        if owner:
+            on = (owner.username or '').lower()
+            if on == 'zuzka':
+                orc, obc = 'owner-zuzka-row', 'owner-badge-zuzka'
+            elif on == 'jirka':
+                orc, obc = 'owner-jirka-row', 'owner-badge-jirka'
+            else:
+                orc, obc = '', 'owner-badge-default'
+        else:
+            orc, obc = '', 'owner-badge-default'
+        rows.append({
+            'institution': inst,
+            'transactions': tx_list,
+            'total_paid': total_paid,
+            'owner_row_class': orc,
+            'owner_badge_class': obc,
+        })
+
+    sort_key_map = {
+        'name': lambda r: (r['institution'].name or '').lower(),
+        'service': lambda r: (r['institution'].service_description or '').lower(),
+        'owner': lambda r: ((r['institution'].owner.username if r['institution'].owner else '') or '').lower(),
+        'price': lambda r: r['institution'].price or Decimal('0'),
+        'frequency': lambda r: (r['institution'].frequency or '').lower(),
+        'total': lambda r: r['total_paid'],
+        'start': lambda r: r['institution'].start_date or date.min,
+        'end': lambda r: r['institution'].end_date or date.min,
+        'contact': lambda r: (r['institution'].contact or '').lower(),
+    }
+    if sort_by not in sort_key_map:
+        sort_by = 'name'
+    rows = sorted(
+        rows,
+        key=sort_key_map[sort_by],
+        reverse=(sort_order == 'desc'),
+    )
+
+    if request.method == 'POST':
+        form = InstitutionForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Instituce byla přidána.')
+            return redirect('institutions')
+    else:
+        form = InstitutionForm()
+
+    return render(request, 'expenses/institutions.html', {
+        'form': form,
+        'rows': rows,
+        'sort_by': sort_by,
+        'sort_order': sort_order,
+    })
+
+
+@login_required
+def edit_institution(request, pk):
+    """Úprava instituce; smazání jen pro uživatele se statusem zaměstnance (staff)."""
+    institution = get_object_or_404(Institution, pk=pk)
+    if request.method == 'POST':
+        if 'delete_institution' in request.POST:
+            if not request.user.is_staff:
+                messages.error(request, 'Smazání instituce je povoleno pouze v administraci nebo pro účet správce.')
+                return redirect('edit_institution', pk=pk)
+            institution.delete()
+            messages.success(request, 'Instituce byla smazána.')
+            return redirect('institutions')
+        form = InstitutionForm(request.POST, instance=institution)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Instituce byla uložena.')
+            return redirect('institutions')
+    else:
+        form = InstitutionForm(instance=institution)
+
+    return render(request, 'expenses/edit_institution.html', {
+        'form': form,
+        'institution': institution,
+    })
+
+
 TRANSACTION_IMPORT_SESSION_KEY = "transaction_import_preview"
 INVESTMENT_IMPORT_SESSION_KEY = "investment_import_preview"
 RECURRING_IMPORT_SESSION_KEY = "recurring_import_preview"
+INSTITUTION_IMPORT_SESSION_KEY = "institution_import_preview"
 
 
 def _safe_json_dumps(data):
@@ -1080,6 +1236,15 @@ def _recurring_duplicate_key(item):
     )
 
 
+def _institution_duplicate_key(item):
+    return (
+        (item.get("name") or "").strip().lower(),
+        str(item.get("start_date") or ""),
+        str(item.get("price") or ""),
+        (item.get("frequency") or "").strip().lower(),
+    )
+
+
 def _serialize_transaction_for_json(t):
     return {
         "id": t.id,
@@ -1099,6 +1264,7 @@ def _serialize_transaction_for_json(t):
         "created_at": t.created_at.isoformat() if t.created_at else "",
         "is_imported": t.is_imported,
         "investment_name": t.investment.name if t.investment else "",
+        "institution_name": t.institution.name if t.institution else "",
     }
 
 
@@ -1122,7 +1288,8 @@ def _build_transaction_export_csv_response(transactions, filename):
     writer.writerow([
         "Datum", "Popis", "Typ", "Kategorie", "Subkategorie",
         "Částka (Kč)", "Za koho", "Na kolik měsíců",
-        "Schváleno", "Poznámka", "Kdo zapsal", "Datum zapsání", "Importováno", "Investiční skupina"
+        "Schváleno", "Poznámka", "Kdo zapsal", "Datum zapsání", "Importováno", "Investiční skupina",
+        "Instituce",
     ])
     for t in transactions:
         writer.writerow([
@@ -1140,6 +1307,7 @@ def _build_transaction_export_csv_response(transactions, filename):
             t.created_at.strftime("%Y-%m-%d %H:%M:%S") if t.created_at else "",
             "Ano" if t.is_imported else "Ne",
             t.investment.name if t.investment else "",
+            t.institution.name if t.institution else "",
         ])
     return response
 
@@ -1194,11 +1362,13 @@ def _normalize_transaction_rows(rows, user):
         category_name = (row_lower.get("kategorie") or row_lower.get("category") or "").strip()
         subcategory_name = (row_lower.get("subkategorie") or row_lower.get("subcategory") or "").strip()
         investment_name = (row_lower.get("investiční skupina") or row_lower.get("investicni skupina") or row_lower.get("investment_name") or "").strip()
+        institution_name = (row_lower.get("instituce") or row_lower.get("institution_name") or "").strip()
         category = Category.objects.filter(name__iexact=category_name).first() if category_name else None
         subcategory = None
         if subcategory_name and category:
             subcategory = Subcategory.objects.filter(category=category, name__iexact=subcategory_name).first()
         investment = Investment.objects.filter(name__iexact=investment_name).first() if investment_name else None
+        inst = Institution.objects.filter(name__iexact=institution_name).first() if institution_name else None
         try:
             months_duration = int(row_lower.get("na kolik měsíců") or row_lower.get("na kolik mesicu") or row_lower.get("months_duration") or 0)
         except Exception:
@@ -1215,6 +1385,7 @@ def _normalize_transaction_rows(rows, user):
             "approved": _parse_boolean(row_lower.get("schváleno") or row_lower.get("schvaleno") or row_lower.get("approved"), default=False),
             "note": (row_lower.get("poznámka") or row_lower.get("poznamka") or row_lower.get("note") or "").strip(),
             "investment_id": investment.id if investment else None,
+            "institution_id": inst.id if inst else None,
             "created_by_id": user.id,
             "is_imported": True,
             "is_deleted": False,
@@ -1345,6 +1516,7 @@ def _serialize_recurring_for_json(rp):
         "frequency_months": rp.frequency_months,
         "start_date": rp.start_date.isoformat(),
         "active": rp.active,
+        "permanent": rp.permanent,
         "paid_dates": [d.isoformat() for d in paid],
     }
 
@@ -1356,7 +1528,7 @@ def _build_recurring_export_csv_response(recurring_qs, filename):
     writer = csv.writer(response)
     writer.writerow([
         "ID", "Název", "Částka (Kč)", "Frekvence (měsíce)", "Počáteční datum",
-        "Aktivní", "Uhrazené termíny",
+        "Aktivní", "Trvalé", "Uhrazené termíny",
     ])
     for rp in recurring_qs:
         paid = list(rp.paid_dates.order_by("due_date").values_list("due_date", flat=True))
@@ -1368,6 +1540,7 @@ def _build_recurring_export_csv_response(recurring_qs, filename):
             rp.frequency_months,
             rp.start_date.isoformat(),
             "Ano" if rp.active else "Ne",
+            "Ano" if rp.permanent else "Ne",
             paid_str,
         ])
     return response
@@ -1437,6 +1610,10 @@ def _normalize_recurring_rows(rows):
             "frequency_months": frequency_months,
             "start_date": start_date.isoformat(),
             "active": _parse_boolean(row_lower.get("aktivní") or row_lower.get("aktivni") or row_lower.get("active"), default=True),
+            "permanent": _parse_boolean(
+                row_lower.get("trvalé") or row_lower.get("trvale") or row_lower.get("permanent"),
+                default=False,
+            ),
             "paid_dates": paid_dates,
         })
     return normalized, errors
@@ -1471,6 +1648,282 @@ def _build_recurring_preview(import_mode, new_items):
     }
 
 
+def _serialize_institution_for_json(inst):
+    return {
+        "id": inst.id,
+        "name": inst.name,
+        "service_description": inst.service_description or "",
+        "owner_username": inst.owner.username if inst.owner else "",
+        "price": str(inst.price),
+        "frequency": inst.frequency or "",
+        "start_date": inst.start_date.isoformat() if inst.start_date else "",
+        "end_date": inst.end_date.isoformat() if inst.end_date else "",
+        "contact": inst.contact or "",
+        "created_at": inst.created_at.isoformat() if inst.created_at else "",
+        "updated_at": inst.updated_at.isoformat() if inst.updated_at else "",
+    }
+
+
+def _build_institution_export_csv_response(institutions_qs, filename):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow([
+        "ID", "Jméno", "Popis služby", "Vlastník", "Cena (Kč)", "Frekvence",
+        "Start", "Konec", "Kontakt",
+    ])
+    for inst in institutions_qs:
+        writer.writerow([
+            inst.id,
+            inst.name,
+            inst.service_description or "",
+            inst.owner.username if inst.owner else "",
+            str(inst.price),
+            inst.frequency or "",
+            inst.start_date.isoformat() if inst.start_date else "",
+            inst.end_date.isoformat() if inst.end_date else "",
+            inst.contact or "",
+        ])
+    return response
+
+
+def _normalize_institution_rows(rows):
+    normalized = []
+    errors = []
+    for idx, row in enumerate(rows, start=1):
+        row_lower = {str(k).strip().lower(): v for k, v in row.items()} if isinstance(row, dict) else {}
+        name = (
+            row_lower.get("jméno") or row_lower.get("jmeno") or row_lower.get("name") or ""
+        ).strip()
+        if not name:
+            errors.append(f"Řádek {idx}: chybí jméno.")
+            continue
+        price = _parse_decimal_or_none(
+            row_lower.get("cena (kč)") or row_lower.get("cena") or row_lower.get("price")
+        )
+        if price is None:
+            price = Decimal("0")
+        owner_username = (
+            row_lower.get("vlastník") or row_lower.get("vlastnik")
+            or row_lower.get("owner_username") or row_lower.get("owner") or ""
+        ).strip()
+        service_description = (
+            row_lower.get("popis služby") or row_lower.get("popis sluzby")
+            or row_lower.get("service_description") or ""
+        ).strip()
+        frequency = (row_lower.get("frekvence") or row_lower.get("frequency") or "").strip()
+        start_date = _parse_date_or_none(
+            row_lower.get("start") or row_lower.get("start_date")
+        )
+        end_date = _parse_date_or_none(
+            row_lower.get("konec") or row_lower.get("end_date")
+        )
+        contact = (row_lower.get("kontakt") or row_lower.get("contact") or "").strip()
+        row_id = row_lower.get("id")
+        try:
+            row_id = int(row_id) if row_id not in (None, "") else None
+        except (TypeError, ValueError):
+            row_id = None
+        normalized.append({
+            "id": row_id,
+            "name": name,
+            "service_description": service_description,
+            "owner_username": owner_username,
+            "price": str(price),
+            "frequency": frequency,
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+            "contact": contact,
+        })
+    return normalized, errors
+
+
+def _build_institution_preview(import_mode, new_items):
+    existing_qs = Institution.objects.order_by("id")
+    existing_items = []
+    for i in existing_qs:
+        existing_items.append({
+            "id": i.id,
+            "name": i.name,
+            "start_date": i.start_date.isoformat() if i.start_date else "",
+            "price": str(i.price),
+            "frequency": i.frequency or "",
+        })
+    duplicate_pairs, only_existing, only_incoming = _duplicate_preview_split(
+        existing_items, new_items, _institution_duplicate_key
+    )
+    return {
+        "dataset": "institutions",
+        "import_mode": import_mode,
+        "existing_count": len(existing_items),
+        "file_count": len(new_items),
+        "overlap_count": len(duplicate_pairs),
+        "duplicate_pairs": duplicate_pairs,
+        "only_existing_count": len(only_existing),
+        "only_incoming_count": len(only_incoming),
+        "only_existing": only_existing,
+        "only_incoming": only_incoming,
+        "new_items": new_items,
+    }
+
+
+def _create_institution_from_import_item(item):
+    owner = None
+    un = (item.get("owner_username") or "").strip()
+    if un:
+        owner = User.objects.filter(username__iexact=un).first()
+    return Institution.objects.create(
+        name=item["name"].strip(),
+        service_description=(item.get("service_description") or "").strip(),
+        owner=owner,
+        price=_parse_decimal_or_none(item.get("price")) or Decimal("0"),
+        frequency=(item.get("frequency") or "").strip(),
+        start_date=_parse_date_or_none(item.get("start_date")) or None,
+        end_date=_parse_date_or_none(item.get("end_date")) or None,
+        contact=(item.get("contact") or "").strip(),
+    )
+
+
+@login_required
+def export_institutions(request):
+    """Export institucí do CSV nebo JSON."""
+    export_format = request.GET.get("format", "csv")
+    institutions_qs = Institution.objects.select_related("owner").order_by("name", "id")
+    filename_base = "instituce"
+    if export_format == "json":
+        payload = {
+            "dataset": "institutions",
+            "exported_at": timezone.now().isoformat(),
+            "count": institutions_qs.count(),
+            "items": [_serialize_institution_for_json(i) for i in institutions_qs],
+        }
+        response = HttpResponse(_safe_json_dumps(payload), content_type="application/json; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename_base}.json"'
+        return response
+    return _build_institution_export_csv_response(institutions_qs, f"{filename_base}.csv")
+
+
+@login_required
+def import_institutions(request):
+    """Dvoufázový import institucí z CSV/JSON."""
+    if request.method != "POST":
+        return redirect("settings")
+
+    action = request.POST.get("action", "preview")
+    if action == "cancel":
+        request.session.pop(INSTITUTION_IMPORT_SESSION_KEY, None)
+        messages.info(request, "Náhled importu institucí byl zrušen.")
+        return redirect("settings")
+
+    if action == "preview":
+        upload = request.FILES.get("file")
+        import_mode = request.POST.get("import_mode", "append")
+        if not upload:
+            messages.error(request, "Vyberte soubor pro import.")
+            return redirect("settings")
+        if import_mode not in {"append", "replace"}:
+            messages.error(request, "Neplatný režim importu.")
+            return redirect("settings")
+        try:
+            rows = _read_uploaded_rows(upload)
+            normalized_rows, errors = _normalize_institution_rows(rows)
+            if errors:
+                messages.error(request, "Import se nepodařilo načíst: " + " | ".join(errors[:6]))
+                return redirect("settings")
+            preview = _build_institution_preview(import_mode, normalized_rows)
+            request.session[INSTITUTION_IMPORT_SESSION_KEY] = preview
+            messages.info(request, "Náhled importu institucí je připravený.")
+        except Exception as exc:
+            messages.error(request, f"Chyba při čtení souboru: {exc}")
+        return redirect("settings")
+
+    preview = request.session.get(INSTITUTION_IMPORT_SESSION_KEY)
+    if not preview:
+        messages.error(request, "Náhled importu vypršel. Nahrajte soubor znovu.")
+        return redirect("settings")
+
+    duplicate_pairs = preview.get("duplicate_pairs") or []
+    dup_decision = request.POST.get("duplicate_decision", "").strip()
+    if duplicate_pairs:
+        if dup_decision not in {"old", "new", "both"}:
+            messages.error(request, "Vyberte hromadnou volbu pro duplicity: starý, nový, nebo oba.")
+            return redirect("settings")
+
+    only_existing_bulk = request.POST.get("only_existing_bulk", "keep")
+    if only_existing_bulk not in {"keep", "drop"}:
+        only_existing_bulk = "keep"
+    only_incoming_bulk = request.POST.get("only_incoming_bulk", "import")
+    if only_incoming_bulk not in {"import", "skip"}:
+        only_incoming_bulk = "import"
+
+    opp_exist = {"keep": "drop", "drop": "keep"}
+    opp_inc = {"import": "skip", "skip": "import"}
+
+    only_existing_keep = {}
+    for row in preview.get("only_existing") or []:
+        oid = row.get("id")
+        if oid is None:
+            continue
+        cb_on = request.POST.get(f"only_existing_apply_{oid}") == "1"
+        eff = _effective_bulk_choice(only_existing_bulk, cb_on, opp_exist)
+        only_existing_keep[oid] = eff == "keep"
+
+    only_incoming_import = {}
+    for entry in preview.get("only_incoming") or []:
+        idx = entry.get("incoming_index")
+        if idx is None:
+            continue
+        cb_on = request.POST.get(f"only_incoming_apply_{idx}") == "1"
+        eff = _effective_bulk_choice(only_incoming_bulk, cb_on, opp_inc)
+        only_incoming_import[idx] = eff == "import"
+
+    imported_count = 0
+    with transaction.atomic():
+        existing_ids_before = set(Institution.objects.values_list("id", flat=True))
+        keep_old_ids = set()
+
+        for pair in duplicate_pairs:
+            decision = dup_decision
+            old_id = pair["old"].get("id")
+            if old_id:
+                if decision in {"old", "both"}:
+                    keep_old_ids.add(old_id)
+                if decision == "new":
+                    Institution.objects.filter(pk=old_id).delete()
+            if decision in {"new", "both"}:
+                new_item = pair["new"]
+                _create_institution_from_import_item(new_item)
+                imported_count += 1
+
+        duplicate_indexes = {pair["incoming_index"] for pair in duplicate_pairs}
+        for index, item in enumerate(preview["new_items"]):
+            if index in duplicate_indexes:
+                continue
+            if not only_incoming_import.get(index, True):
+                continue
+            _create_institution_from_import_item(item)
+            imported_count += 1
+
+        for oid, want_keep in only_existing_keep.items():
+            if want_keep:
+                keep_old_ids.add(oid)
+            else:
+                Institution.objects.filter(pk=oid).delete()
+
+        if preview["import_mode"] == "replace":
+            delete_ids = existing_ids_before - keep_old_ids
+            if delete_ids:
+                Institution.objects.filter(id__in=delete_ids).delete()
+
+    request.session.pop(INSTITUTION_IMPORT_SESSION_KEY, None)
+    messages.success(
+        request,
+        f"Import institucí dokončen. Nově zapsáno {imported_count} záznamů, překryvy vyřešeny: {len(duplicate_pairs)}.",
+    )
+    return redirect("settings")
+
+
 @login_required
 def settings(request):
     """Nastavení - kategorie, subkategorie a import/export."""
@@ -1487,6 +1940,7 @@ def settings(request):
     transaction_preview = request.session.get(TRANSACTION_IMPORT_SESSION_KEY)
     observation_preview = request.session.get(INVESTMENT_IMPORT_SESSION_KEY)
     recurring_preview = request.session.get(RECURRING_IMPORT_SESSION_KEY)
+    institution_preview = request.session.get(INSTITUTION_IMPORT_SESSION_KEY)
 
     if request.method == 'POST':
         if 'add_category' in request.POST:
@@ -1521,6 +1975,7 @@ def settings(request):
         'transaction_import_preview': transaction_preview,
         'investment_import_preview': observation_preview,
         'recurring_import_preview': recurring_preview,
+        'institution_import_preview': institution_preview,
     }
 
     return render(request, 'expenses/settings.html', context)
@@ -1665,6 +2120,7 @@ def import_transactions(request):
                     note=new_item.get("note") or "",
                     created_by_id=request.user.id,
                     investment_id=new_item.get("investment_id"),
+                    institution_id=new_item.get("institution_id"),
                     is_imported=True,
                     is_deleted=False,
                 )
@@ -1689,6 +2145,7 @@ def import_transactions(request):
                 note=item.get("note") or "",
                 created_by_id=request.user.id,
                 investment_id=item.get("investment_id"),
+                institution_id=item.get("institution_id"),
                 is_imported=True,
                 is_deleted=False,
             )
@@ -1872,6 +2329,7 @@ def _create_recurring_from_import_item(item):
         frequency_months=int(item.get("frequency_months") or 1),
         start_date=_parse_date_or_none(item.get("start_date")),
         active=bool(item.get("active", True)),
+        permanent=bool(item.get("permanent")),
     )
     _sync_recurring_paid_dates(rp, item.get("paid_dates") or [])
     return rp
@@ -2019,7 +2477,7 @@ def import_recurring_payments(request):
 @login_required
 def download_import_template(request, dataset, template_format):
     """Stažení šablony importu pro transakce, pozorování investic nebo trvalé platby."""
-    if dataset not in {"transactions", "investment_observations", "recurring_payments"}:
+    if dataset not in {"transactions", "investment_observations", "recurring_payments", "institutions"}:
         messages.error(request, "Neznámý typ šablony.")
         return redirect("settings")
     if template_format not in {"csv", "json"}:
@@ -2039,6 +2497,7 @@ def download_import_template(request, dataset, template_format):
             "Schváleno": "Ano",
             "Poznámka": "Týdenní nákup",
             "Investiční skupina": "",
+            "Instituce": "",
         }
         filename_base = "template_import_transakce"
     elif dataset == "investment_observations":
@@ -2048,7 +2507,7 @@ def download_import_template(request, dataset, template_format):
             "Datum pozorování": "2026-05-01",
         }
         filename_base = "template_import_investice_pozorovani"
-    else:
+    elif dataset == "recurring_payments":
         sample = {
             "ID": "",
             "Název": "Nájem",
@@ -2056,9 +2515,26 @@ def download_import_template(request, dataset, template_format):
             "Frekvence (měsíce)": "1",
             "Počáteční datum": "2026-01-05",
             "Aktivní": "Ano",
+            "Trvalé": "Ne",
             "Uhrazené termíny": "2026-05-05",
         }
         filename_base = "template_import_trvale_platby"
+    elif dataset == "institutions":
+        sample = {
+            "ID": "",
+            "Jméno": "Banka XY",
+            "Popis služby": "Běžný účet",
+            "Vlastník": "jirka",
+            "Cena (Kč)": "99.00",
+            "Frekvence": "měsíčně",
+            "Start": "2026-01-01",
+            "Konec": "",
+            "Kontakt": "link nebo telefon",
+        }
+        filename_base = "template_import_instituce"
+    else:
+        messages.error(request, "Neznámý typ šablony.")
+        return redirect("settings")
 
     if template_format == "json":
         payload = {"dataset": dataset, "items": [sample]}

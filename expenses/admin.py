@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from .models import (
     Category, Subcategory, Transaction, RecurringPayment, RecurringPaymentPaidDate,
-    Investment, BudgetLimit
+    Investment, Institution, BudgetLimit
 )
 
 
@@ -23,8 +23,8 @@ class SubcategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ['description', 'amount', 'transaction_type', 'category', 'investment', 'date', 'created_by', 'approved']
-    list_filter = ['transaction_type', 'category', 'approved', 'date', 'payment_for', 'investment']
+    list_display = ['description', 'amount', 'transaction_type', 'category', 'investment', 'institution', 'date', 'created_by', 'approved']
+    list_filter = ['transaction_type', 'category', 'approved', 'date', 'payment_for', 'investment', 'institution']
     search_fields = ['description', 'note']
     date_hierarchy = 'date'
     readonly_fields = ['created_at', 'updated_at']
@@ -32,8 +32,8 @@ class TransactionAdmin(admin.ModelAdmin):
 
 @admin.register(RecurringPayment)
 class RecurringPaymentAdmin(admin.ModelAdmin):
-    list_display = ['name', 'amount', 'frequency_months', 'start_date', 'active']
-    list_filter = ['active']
+    list_display = ['name', 'amount', 'frequency_months', 'start_date', 'active', 'permanent']
+    list_filter = ['active', 'permanent']
     search_fields = ['name']
 
 
@@ -42,6 +42,13 @@ class RecurringPaymentPaidDateAdmin(admin.ModelAdmin):
     list_display = ['recurring_payment', 'due_date', 'created_at']
     list_filter = ['due_date']
     date_hierarchy = 'due_date'
+
+
+@admin.register(Institution)
+class InstitutionAdmin(admin.ModelAdmin):
+    list_display = ['name', 'owner', 'price', 'frequency', 'start_date', 'end_date', 'created_at']
+    search_fields = ['name', 'service_description', 'contact']
+    list_filter = ['owner']
 
 
 @admin.register(Investment)

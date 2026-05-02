@@ -3,7 +3,7 @@ from django.utils import timezone
 from datetime import date
 from .models import (
     Transaction, Category, Subcategory, Investment, InvestmentObservation,
-    RecurringPayment, TransactionType, PaymentFor
+    RecurringPayment, Institution, TransactionType, PaymentFor
 )
 
 
@@ -12,7 +12,7 @@ class TransactionForm(forms.ModelForm):
         model = Transaction
         fields = [
             'amount', 'description', 'transaction_type', 'category', 'subcategory',
-            'months_duration', 'date', 'payment_for', 'note', 'is_recurring', 'approved', 'investment'
+            'months_duration', 'date', 'payment_for', 'note', 'approved', 'investment', 'institution'
         ]
         widgets = {
             'amount': forms.NumberInput(attrs={
@@ -30,9 +30,9 @@ class TransactionForm(forms.ModelForm):
             'date': forms.DateInput(format='%Y-%m-%d', attrs={'class': 'form-control', 'type': 'date'}),
             'payment_for': forms.Select(attrs={'class': 'form-control'}),
             'note': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
-            'is_recurring': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'approved': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'investment': forms.Select(attrs={'class': 'form-control'}),
+            'institution': forms.Select(attrs={'class': 'form-control'}),
         }
         labels = {
             'amount': 'Částka (Kč)',
@@ -44,9 +44,9 @@ class TransactionForm(forms.ModelForm):
             'date': 'Datum',
             'payment_for': 'Za koho placeno',
             'note': 'Poznámka',
-            'is_recurring': 'Trvalá platba',
             'approved': 'Schváleno',
             'investment': 'Investiční skupina (pouze pro typ Investice)',
+            'institution': 'Instituce (volitelné)',
         }
     
     def __init__(self, *args, **kwargs):
@@ -66,6 +66,9 @@ class TransactionForm(forms.ModelForm):
         self.fields['date'].required = True
         self.fields['payment_for'].required = True
         self.fields['months_duration'].required = True
+        self.fields['institution'].required = False
+        self.fields['institution'].empty_label = '— (žádná)'
+        self.fields['institution'].queryset = Institution.objects.all().order_by('name')
         self.fields['payment_for'].choices = [
             (PaymentFor.SELF, 'Sám'),
             (PaymentFor.SHARED, 'Společný'),
@@ -216,13 +219,14 @@ class RecurringPaymentForm(forms.ModelForm):
 
     class Meta:
         model = RecurringPayment
-        fields = ['name', 'amount', 'frequency_months', 'start_date', 'active']
+        fields = ['name', 'amount', 'frequency_months', 'start_date', 'active', 'permanent']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'frequency_months': forms.NumberInput(attrs={'class': 'form-control', 'min': '1'}),
             'start_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'permanent': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
         labels = {
             'name': 'Název',
@@ -230,5 +234,59 @@ class RecurringPaymentForm(forms.ModelForm):
             'frequency_months': 'Frekvence (měsíce)',
             'start_date': 'Počáteční datum platby',
             'active': 'Aktivní',
+            'permanent': 'Trvalé',
         }
+
+
+class InstitutionForm(forms.ModelForm):
+    class Meta:
+        model = Institution
+        fields = [
+            'name', 'service_description', 'owner', 'price', 'frequency',
+            'start_date', 'end_date', 'contact',
+        ]
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'service_description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'owner': forms.Select(attrs={'class': 'form-control'}),
+            'price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'frequency': forms.TextInput(attrs={'class': 'form-control'}),
+            # format + type=date: bez explicitního format Django často neparsuje hodnotu z prohlížeče → datum se neuloží
+            'start_date': forms.DateInput(
+                format='%Y-%m-%d',
+                attrs={'class': 'form-control', 'type': 'date'},
+            ),
+            'end_date': forms.DateInput(
+                format='%Y-%m-%d',
+                attrs={'class': 'form-control', 'type': 'date'},
+            ),
+            'contact': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+        }
+        labels = {
+            'name': 'Jméno',
+            'service_description': 'Popis služby',
+            'owner': 'Vlastník',
+            'price': 'Cena (Kč)',
+            'frequency': 'Frekvence',
+            'start_date': 'Start',
+            'end_date': 'Konec',
+            'contact': 'Kontakt',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for fname in ('start_date', 'end_date'):
+            self.fields[fname].input_formats = ['%Y-%m-%d', '%d.%m.%Y', '%d/%m/%Y']
+        self.fields['owner'].required = False
+        self.fields['service_description'].required = False
+        self.fields['frequency'].required = False
+        self.fields['start_date'].required = False
+        self.fields['end_date'].required = False
+        self.fields['contact'].required = False
+
+    def clean_price(self):
+        v = self.cleaned_data.get('price')
+        if v is not None and v < 0:
+            raise forms.ValidationError('Cena nemůže být záporná.')
+        return v
 

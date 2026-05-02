@@ -180,7 +180,7 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'manage_transactions' or request.resolver_match.url_name == 'add_transaction' %}active{% endif %}" href="{% url 'manage_transactions' %}">
-                            <i class="bi bi-pencil-square"></i> Upravovat transakce
+                            <i class="bi bi-pencil-square"></i> Transakce
                         </a>
                     </li>
                     <li class="nav-item">
@@ -201,6 +201,11 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'investments' %}active{% endif %}" href="{% url 'investments' %}">
                             <i class="bi bi-piggy-bank"></i> Investice
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'institutions' or request.resolver_match.url_name == 'edit_institution' %}active{% endif %}" href="{% url 'institutions' %}">
+                            <i class="bi bi-bank"></i> Instituce
                         </a>
                     </li>
                     <li class="nav-item">
