@@ -1,0 +1,8 @@
+{% load czech_filters %}
+<td class="recurring-owner-cell align-middle text-center px-1">
+    {% if payment.owner %}
+    <span class="badge {{ payment.owner|owner_badge_class }} recurring-owner-badge" title="{{ payment.owner.username }}">{{ payment.owner.username }}</span>
+    {% else %}
+    <span class="text-muted small">—</span>
+    {% endif %}
+</td>

@@ -32,8 +32,8 @@ class TransactionAdmin(admin.ModelAdmin):
 
 @admin.register(RecurringPayment)
 class RecurringPaymentAdmin(admin.ModelAdmin):
-    list_display = ['name', 'amount', 'frequency_months', 'start_date', 'active', 'permanent']
-    list_filter = ['active', 'permanent']
+    list_display = ['name', 'owner', 'amount', 'frequency_months', 'start_date', 'active', 'permanent']
+    list_filter = ['active', 'permanent', 'owner']
     search_fields = ['name']
 
 

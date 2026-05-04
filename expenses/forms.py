@@ -3,7 +3,7 @@ from django.utils import timezone
 from datetime import date
 from .models import (
     Transaction, Category, Subcategory, Investment, InvestmentObservation,
-    RecurringPayment, Institution, TransactionType, PaymentFor
+    RecurringPayment, Institution, TransactionType, PaymentFor, CategoryType,
 )
 
 
@@ -12,7 +12,7 @@ class TransactionForm(forms.ModelForm):
         model = Transaction
         fields = [
             'amount', 'description', 'transaction_type', 'category', 'subcategory',
-            'months_duration', 'date', 'payment_for', 'note', 'approved', 'investment', 'institution'
+            'is_recurring', 'months_duration', 'date', 'payment_for', 'note', 'approved', 'investment', 'institution'
         ]
         widgets = {
             'amount': forms.NumberInput(attrs={
@@ -26,6 +26,7 @@ class TransactionForm(forms.ModelForm):
             'transaction_type': forms.Select(attrs={'class': 'form-control'}),
             'category': forms.Select(attrs={'class': 'form-control'}),
             'subcategory': forms.Select(attrs={'class': 'form-control'}),
+            'is_recurring': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'months_duration': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'max': '12'}),
             'date': forms.DateInput(format='%Y-%m-%d', attrs={'class': 'form-control', 'type': 'date'}),
             'payment_for': forms.Select(attrs={'class': 'form-control'}),
@@ -40,6 +41,7 @@ class TransactionForm(forms.ModelForm):
             'transaction_type': 'Typ',
             'category': 'Kategorie',
             'subcategory': 'Subkategorie',
+            'is_recurring': 'Opakující se',
             'months_duration': 'Na kolik měsíců (0 = jednorázové)',
             'date': 'Datum',
             'payment_for': 'Za koho placeno',
@@ -65,6 +67,7 @@ class TransactionForm(forms.ModelForm):
         self.fields['subcategory'].required = True
         self.fields['date'].required = True
         self.fields['payment_for'].required = True
+        self.fields['is_recurring'].required = False
         self.fields['months_duration'].required = True
         self.fields['institution'].required = False
         self.fields['institution'].empty_label = '— (žádná)'
@@ -79,7 +82,15 @@ class TransactionForm(forms.ModelForm):
             if self.data
             else self.initial.get('transaction_type') or self.instance.transaction_type or TransactionType.EXPENSE
         )
-        self.fields['category'].queryset = Category.objects.filter(type=selected_type).order_by('name')
+        # Investice používají kategorie typu výdaj (v DB neexistuje CategoryType.INVESTMENT).
+        if selected_type == TransactionType.INVESTMENT:
+            self.fields['category'].queryset = Category.objects.filter(type=CategoryType.EXPENSE).order_by('name')
+        else:
+            self.fields['category'].queryset = Category.objects.filter(type=selected_type).order_by('name')
+
+        self.fields['investment'].queryset = Investment.objects.all().order_by('name')
+        self.fields['investment'].empty_label = '— vyberte skupinu —'
+        self.fields['investment'].required = False
 
         selected_category = self.data.get('category') if self.data else self.initial.get('category') or getattr(self.instance, 'category_id', None)
         if selected_category:
@@ -115,12 +126,30 @@ class TransactionForm(forms.ModelForm):
         category = cleaned_data.get('category')
         subcategory = cleaned_data.get('subcategory')
         transaction_type = cleaned_data.get('transaction_type')
+        investment = cleaned_data.get('investment')
+        is_recurring = cleaned_data.get('is_recurring')
+        months_duration = cleaned_data.get('months_duration')
 
-        if category and transaction_type and category.type != transaction_type:
+        if transaction_type != TransactionType.INVESTMENT:
+            cleaned_data['investment'] = None
+
+        if transaction_type == TransactionType.INVESTMENT:
+            cleaned_data['is_recurring'] = False
+            cleaned_data['months_duration'] = 0
+            if not investment:
+                self.add_error('investment', 'Vyberte investiční skupinu.')
+            if category and category.type != CategoryType.EXPENSE:
+                self.add_error('category', 'Pro investici použijte kategorii výdaje.')
+        elif category and transaction_type and category.type != transaction_type:
             self.add_error('category', 'Kategorie neodpovídá zvolenému typu transakce.')
 
         if category and subcategory and subcategory.category_id != category.id:
             self.add_error('subcategory', 'Subkategorie nepatří do vybrané kategorie.')
+
+        is_recurring = cleaned_data.get('is_recurring')
+        months_duration = cleaned_data.get('months_duration')
+        if is_recurring and (months_duration is None or months_duration <= 0):
+            self.add_error('months_duration', 'U opakující se transakce musí být "Na kolik měsíců" větší než 0.')
 
         # New transactions always start as unapproved.
         if not self.instance.pk:
@@ -217,14 +246,22 @@ class RecurringPaymentForm(forms.ModelForm):
             raise forms.ValidationError('Frekvence musí být alespoň 1 měsíc.')
         return v
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.contrib.auth.models import User
+        self.fields['owner'].required = False
+        self.fields['owner'].queryset = User.objects.order_by('username')
+        self.fields['owner'].empty_label = '— (společné / nerozlišeno)'
+
     class Meta:
         model = RecurringPayment
-        fields = ['name', 'amount', 'frequency_months', 'start_date', 'active', 'permanent']
+        fields = ['name', 'amount', 'frequency_months', 'start_date', 'owner', 'active', 'permanent']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'frequency_months': forms.NumberInput(attrs={'class': 'form-control', 'min': '1'}),
             'start_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'owner': forms.Select(attrs={'class': 'form-control'}),
             'active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'permanent': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
@@ -233,6 +270,7 @@ class RecurringPaymentForm(forms.ModelForm):
             'amount': 'Částka (Kč)',
             'frequency_months': 'Frekvence (měsíce)',
             'start_date': 'Počáteční datum platby',
+            'owner': 'Vlastník',
             'active': 'Aktivní',
             'permanent': 'Trvalé',
         }

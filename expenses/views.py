@@ -21,6 +21,7 @@ import csv
 import io
 import json
 from collections import defaultdict
+from urllib.parse import urlencode
 
 from .models import (
     Transaction, Category, Subcategory, RecurringPayment, RecurringPaymentPaidDate,
@@ -177,6 +178,21 @@ def payment_for_badge_class(username):
     if un == 'jirka':
         return 'owner-badge-jirka'
     return 'owner-badge-default'
+
+
+def split_recurring_amount_by_owner(amount, owner, user1, user2):
+    """Přiřadí částku trvalé platby do splitu (bez vlastníka 50/50, neznámý vlastník 50/50)."""
+    if amount is None:
+        amount = Decimal('0')
+    if owner is None:
+        half = amount / Decimal('2')
+        return half, half
+    if user1 and owner.id == user1.id:
+        return amount, Decimal('0')
+    if user2 and owner.id == user2.id:
+        return Decimal('0'), amount
+    half = amount / Decimal('2')
+    return half, half
 
 
 @login_required
@@ -612,7 +628,7 @@ def predictions(request):
     last_day = monthrange(today.year, today.month)[1]
     current_month_end = today.replace(day=last_day)
     
-    recurring_qs = RecurringPayment.objects.filter(active=True)
+    recurring_qs = RecurringPayment.objects.filter(active=True).select_related('owner')
     expected_income = Decimal('0')
     expected_expenses = Decimal('0')
     expected_income_user1 = Decimal('0')
@@ -620,6 +636,10 @@ def predictions(request):
     expected_expenses_user1 = Decimal('0')
     expected_expenses_user2 = Decimal('0')
     expected_recurring_list = []
+
+    split_user1_label, split_user2_label = get_split_user_labels()
+    split_user1 = User.objects.filter(username__iexact=split_user1_label).first()
+    split_user2 = User.objects.filter(username__iexact=split_user2_label).first()
 
     for rp in recurring_qs:
         if not has_occurrence_in_month(
@@ -631,14 +651,136 @@ def predictions(request):
         )
         amount = rp.amount
         expected_expenses += amount
-        expected_expenses_user1 += amount / 2
-        expected_expenses_user2 += amount / 2
+        u1p, u2p = split_recurring_amount_by_owner(amount, rp.owner, split_user1, split_user2)
+        expected_expenses_user1 += u1p
+        expected_expenses_user2 += u2p
 
         expected_recurring_list.append({
             'payment': rp,
             'amount': rp.amount,
             'occurrence_date': od,
         })
+
+    expected_recurring_user1 = expected_expenses_user1
+    expected_recurring_user2 = expected_expenses_user2
+
+    # Očekávané příjmy, investice a "ostatní výdaje" jako průměr posledních 3 dokončených měsíců.
+    month_start = current_month_start
+    month_windows = []
+    for _ in range(3):
+        previous_month_end = month_start - timedelta(days=1)
+        previous_month_start = previous_month_end.replace(day=1)
+        month_windows.append((previous_month_start, previous_month_end))
+        month_start = previous_month_start
+
+    income_last_3_months = []
+    income_last_3_months_user1 = []
+    income_last_3_months_user2 = []
+    investment_last_3_months = []
+    investment_last_3_months_user1 = []
+    investment_last_3_months_user2 = []
+    other_expenses_last_3_months = []
+    other_expenses_u1_last_3_months = []
+    other_expenses_u2_last_3_months = []
+
+    recurring_signatures = set(
+        RecurringPayment.objects.filter(active=True).values_list('name', 'amount')
+    )
+    recurring_signatures_normalized = {
+        ((name or '').strip().lower(), amount) for name, amount in recurring_signatures
+    }
+
+    month_names_cz = {
+        1: 'Leden', 2: 'Únor', 3: 'Březen', 4: 'Duben',
+        5: 'Květen', 6: 'Červen', 7: 'Červenec', 8: 'Srpen',
+        9: 'Září', 10: 'Říjen', 11: 'Listopad', 12: 'Prosinec',
+    }
+    # Nejstarší → nejnovější z trojice (shodné pořadí jako investment_u*_last_3_months.0…2)
+    prediction_month_labels = [
+        f"{month_names_cz[ws.month]} {ws.year}"
+        for ws, _we in reversed(month_windows)
+    ]
+
+    for month_start_window, month_end_window in month_windows:
+        monthly_income_transactions = Transaction.objects.filter(
+            date__gte=month_start_window,
+            date__lte=month_end_window,
+            transaction_type=TransactionType.INCOME,
+            is_deleted=False,
+        )
+        monthly_income_total = monthly_income_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        income_last_3_months.append(monthly_income_total)
+        split_income_user1, split_income_user2 = calculate_split_amounts(monthly_income_transactions)
+        income_last_3_months_user1.append(split_income_user1)
+        income_last_3_months_user2.append(split_income_user2)
+
+        monthly_expense_transactions = Transaction.objects.filter(
+            date__gte=month_start_window,
+            date__lte=month_end_window,
+            transaction_type=TransactionType.EXPENSE,
+            is_deleted=False,
+        )
+        other_tx_list = []
+        for tx in monthly_expense_transactions:
+            tx_signature = ((tx.description or '').strip().lower(), tx.amount)
+            if tx_signature in recurring_signatures_normalized:
+                continue
+            other_tx_list.append(tx)
+        ou1, ou2 = calculate_split_amounts(other_tx_list)
+        other_expenses_total = ou1 + ou2
+        other_expenses_last_3_months.append(other_expenses_total)
+        other_expenses_u1_last_3_months.append(ou1)
+        other_expenses_u2_last_3_months.append(ou2)
+
+        monthly_investment_transactions = Transaction.objects.filter(
+            date__gte=month_start_window,
+            date__lte=month_end_window,
+            transaction_type=TransactionType.INVESTMENT,
+            is_deleted=False,
+        )
+        monthly_investment_total = (
+            monthly_investment_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        )
+        investment_last_3_months.append(monthly_investment_total)
+        inv_u1, inv_u2 = calculate_split_amounts(monthly_investment_transactions)
+        investment_last_3_months_user1.append(inv_u1)
+        investment_last_3_months_user2.append(inv_u2)
+
+    if income_last_3_months:
+        expected_income = sum(income_last_3_months, start=Decimal('0')) / Decimal(len(income_last_3_months))
+        expected_income_user1 = sum(income_last_3_months_user1, start=Decimal('0')) / Decimal(len(income_last_3_months_user1))
+        expected_income_user2 = sum(income_last_3_months_user2, start=Decimal('0')) / Decimal(len(income_last_3_months_user2))
+    n_other_m = len(other_expenses_last_3_months)
+    average_other_expenses = (
+        sum(other_expenses_last_3_months, start=Decimal('0')) / Decimal(n_other_m)
+        if n_other_m else Decimal('0')
+    )
+    average_other_u1 = (
+        sum(other_expenses_u1_last_3_months, start=Decimal('0')) / Decimal(n_other_m)
+        if n_other_m else Decimal('0')
+    )
+    average_other_u2 = (
+        sum(other_expenses_u2_last_3_months, start=Decimal('0')) / Decimal(n_other_m)
+        if n_other_m else Decimal('0')
+    )
+
+    n_inv_m = len(investment_last_3_months)
+    expected_investment = (
+        sum(investment_last_3_months, start=Decimal('0')) / Decimal(n_inv_m)
+        if n_inv_m else Decimal('0')
+    )
+    expected_investment_user1 = (
+        sum(investment_last_3_months_user1, start=Decimal('0')) / Decimal(n_inv_m)
+        if n_inv_m else Decimal('0')
+    )
+    expected_investment_user2 = (
+        sum(investment_last_3_months_user2, start=Decimal('0')) / Decimal(n_inv_m)
+        if n_inv_m else Decimal('0')
+    )
+
+    expected_expenses_user1 += average_other_u1
+    expected_expenses_user2 += average_other_u2
+    expected_total_expenses = expected_expenses + average_other_expenses
 
     actual_income_transactions = Transaction.objects.filter(
         date__gte=current_month_start,
@@ -652,28 +794,43 @@ def predictions(request):
         transaction_type=TransactionType.EXPENSE,
         is_deleted=False,
     )
+    actual_investment_transactions = Transaction.objects.filter(
+        date__gte=current_month_start,
+        date__lte=today,
+        transaction_type=TransactionType.INVESTMENT,
+        is_deleted=False,
+    )
 
     actual_income = actual_income_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
     actual_expenses = actual_expense_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    actual_investment = actual_investment_transactions.aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
     actual_income_user1, actual_income_user2 = calculate_split_amounts(actual_income_transactions)
     actual_expenses_user1, actual_expenses_user2 = calculate_split_amounts(actual_expense_transactions)
-    
-    # Název aktuálního měsíce
-    month_names = {
-        1: 'Leden', 2: 'Únor', 3: 'Březen', 4: 'Duben',
-        5: 'Květen', 6: 'Červen', 7: 'Červenec', 8: 'Srpen',
-        9: 'Září', 10: 'Říjen', 11: 'Listopad', 12: 'Prosinec'
-    }
-    current_month_name = month_names.get(today.month, '')
-    
-    split_user1_label, split_user2_label = get_split_user_labels()
+    actual_investment_user1, actual_investment_user2 = calculate_split_amounts(actual_investment_transactions)
+
+    actual_recurring_tx_list = []
+    actual_other_tx_list = []
+    for tx in actual_expense_transactions:
+        tx_signature = ((tx.description or '').strip().lower(), tx.amount)
+        if tx_signature in recurring_signatures_normalized:
+            actual_recurring_tx_list.append(tx)
+        else:
+            actual_other_tx_list.append(tx)
+    actual_recurring_user1, actual_recurring_user2 = calculate_split_amounts(actual_recurring_tx_list)
+    actual_other_user1, actual_other_user2 = calculate_split_amounts(actual_other_tx_list)
+
+    current_month_name = month_names_cz.get(today.month, '')
 
     context = {
         'expected_income': expected_income,
         'expected_expenses': expected_expenses,
+        'expected_total_expenses': expected_total_expenses,
         'expected_income_user1': expected_income_user1,
         'expected_income_user2': expected_income_user2,
+        'expected_investment': expected_investment,
+        'expected_investment_user1': expected_investment_user1,
+        'expected_investment_user2': expected_investment_user2,
         'expected_expenses_user1': expected_expenses_user1,
         'expected_expenses_user2': expected_expenses_user2,
         'actual_income': actual_income,
@@ -682,6 +839,13 @@ def predictions(request):
         'actual_income_user2': actual_income_user2,
         'actual_expenses_user1': actual_expenses_user1,
         'actual_expenses_user2': actual_expenses_user2,
+        'actual_investment': actual_investment,
+        'actual_investment_user1': actual_investment_user1,
+        'actual_investment_user2': actual_investment_user2,
+        'actual_recurring_user1': actual_recurring_user1,
+        'actual_recurring_user2': actual_recurring_user2,
+        'actual_other_user1': actual_other_user1,
+        'actual_other_user2': actual_other_user2,
         'expected_recurring_list': expected_recurring_list,
         'current_month_name': current_month_name,
         'current_year': today.year,
@@ -691,17 +855,32 @@ def predictions(request):
         'split_user2_label': split_user2_label,
         'split_user1_badge_class': payment_for_badge_class(split_user1_label),
         'split_user2_badge_class': payment_for_badge_class(split_user2_label),
+        'other_expenses_last_3_months': list(reversed(other_expenses_last_3_months)),
+        'other_expenses_u1_last_3_months': list(reversed(other_expenses_u1_last_3_months)),
+        'other_expenses_u2_last_3_months': list(reversed(other_expenses_u2_last_3_months)),
+        'investment_u1_last_3_months': list(reversed(investment_last_3_months_user1)),
+        'investment_u2_last_3_months': list(reversed(investment_last_3_months_user2)),
+        'income_u1_last_3_months': list(reversed(income_last_3_months_user1)),
+        'income_u2_last_3_months': list(reversed(income_last_3_months_user2)),
+        'prediction_month_labels': prediction_month_labels,
+        'other_expenses_average': average_other_expenses,
+        'other_expenses_average_user1': average_other_u1,
+        'other_expenses_average_user2': average_other_u2,
+        'recurring_expenses_total': expected_expenses,
+        'expected_recurring_user1': expected_recurring_user1,
+        'expected_recurring_user2': expected_recurring_user2,
     }
     
     return render(request, 'expenses/predictions.html', context)
 
 
-def _recurring_row_dict(payment, due_date, paid_set):
+def _recurring_row_dict(payment, due_date, paid_set, suggested_transaction=None):
     pid = payment.id
     return {
         'payment': payment,
         'display_date': due_date,
         'is_paid': (pid, due_date) in paid_set,
+        'suggested_transaction': suggested_transaction,
     }
 
 
@@ -710,7 +889,21 @@ def recurring_payments(request):
     """Trvalé platby — termíny dopočítané od počátečního data; zaplaceno jen orientačně (bez vazby na transakce)."""
     today = timezone.now().date()
 
-    payments = list(RecurringPayment.objects.filter(active=True).order_by('start_date', 'name'))
+    split_user1_label, split_user2_label = get_split_user_labels()
+    split_user1 = User.objects.filter(username__iexact=split_user1_label).first()
+    split_user2 = User.objects.filter(username__iexact=split_user2_label).first()
+
+    owner_filter = request.GET.get('owner', 'both')
+    if owner_filter not in ('both', 'user1', 'user2'):
+        owner_filter = 'both'
+
+    base_qs = RecurringPayment.objects.filter(active=True).select_related('owner')
+    if owner_filter == 'user1' and split_user1:
+        base_qs = base_qs.filter(owner_id=split_user1.id)
+    elif owner_filter == 'user2' and split_user2:
+        base_qs = base_qs.filter(owner_id=split_user2.id)
+
+    payments = list(base_qs.order_by('start_date', 'name'))
 
     paid_pairs = set(
         RecurringPaymentPaidDate.objects.filter(
@@ -729,13 +922,29 @@ def recurring_payments(request):
         for od in next_m:
             future_rows.append(_recurring_row_dict(payment, od, paid_pairs))
         for od in cur:
-            current_rows.append(_recurring_row_dict(payment, od, paid_pairs))
+            suggested_tx = Transaction.objects.filter(
+                is_deleted=False,
+                transaction_type=TransactionType.EXPENSE,
+                date=od,
+                amount=payment.amount,
+                description__iexact=payment.name,
+            ).order_by('-created_at').first()
+            current_rows.append(_recurring_row_dict(payment, od, paid_pairs, suggested_transaction=suggested_tx))
         for od in pst:
             past_rows.append(_recurring_row_dict(payment, od, paid_pairs))
 
     future_rows.sort(key=lambda r: (r['display_date'], r['payment'].id), reverse=True)
     current_rows.sort(key=lambda r: (r['display_date'], r['payment'].id), reverse=True)
     past_rows.sort(key=lambda r: (r['display_date'], r['payment'].id), reverse=True)
+
+    future_rows_amount_sum = sum(
+        (r['payment'].amount for r in future_rows),
+        start=Decimal('0'),
+    )
+    current_rows_amount_sum = sum(
+        (r['payment'].amount for r in current_rows),
+        start=Decimal('0'),
+    )
 
     month_names = {
         1: 'Leden', 2: 'Únor', 3: 'Březen', 4: 'Duben',
@@ -751,6 +960,11 @@ def recurring_payments(request):
         if form.is_valid():
             form.save()
             messages.success(request, 'Trvalá platba byla přidána.')
+            ro = (request.POST.get('return_owner') or '').strip()
+            if ro not in ('both', 'user1', 'user2'):
+                ro = 'both'
+            if ro != 'both':
+                return redirect(f"{reverse('recurring_payments')}?{urlencode({'owner': ro})}")
             return redirect('recurring_payments')
     else:
         form = RecurringPaymentForm()
@@ -818,6 +1032,11 @@ def recurring_payments(request):
         'summary_non_yearly': summary_non_yearly,
         'summary_total_monthly': summary_total_monthly,
         'summary_total_yearly': summary_total_yearly,
+        'owner_filter': owner_filter,
+        'split_user1_label': split_user1_label,
+        'split_user2_label': split_user2_label,
+        'future_rows_amount_sum': future_rows_amount_sum,
+        'current_rows_amount_sum': current_rows_amount_sum,
     })
 
 
@@ -830,8 +1049,14 @@ def recurring_payment_toggle_paid(request):
     payment = get_object_or_404(RecurringPayment, pk=payment_id)
     due_date = parse_date(due_raw) if due_raw else None
     if not due_date:
+        ro = (request.POST.get('return_owner') or '').strip()
+        if ro in ('both', 'user1', 'user2') and ro != 'both':
+            return redirect(f"{reverse('recurring_payments')}?{urlencode({'owner': ro})}")
         return redirect('recurring_payments')
     if not occurrence_matches_series(payment.start_date, payment.frequency_months, due_date):
+        ro = (request.POST.get('return_owner') or '').strip()
+        if ro in ('both', 'user1', 'user2') and ro != 'both':
+            return redirect(f"{reverse('recurring_payments')}?{urlencode({'owner': ro})}")
         return redirect('recurring_payments')
     if set_paid == '1':
         RecurringPaymentPaidDate.objects.get_or_create(
@@ -849,6 +1074,11 @@ def recurring_payment_toggle_paid(request):
             existing.delete()
         else:
             RecurringPaymentPaidDate.objects.create(recurring_payment=payment, due_date=due_date)
+    ro = (request.POST.get('return_owner') or '').strip()
+    if ro not in ('both', 'user1', 'user2'):
+        ro = 'both'
+    if ro != 'both':
+        return redirect(f"{reverse('recurring_payments')}?{urlencode({'owner': ro})}")
     return redirect('recurring_payments')
 
 
@@ -1271,6 +1501,7 @@ def _serialize_transaction_for_json(t):
         "amount": str(t.amount),
         "payment_for": t.payment_for,
         "payment_for_label": t.get_payment_for_display(),
+        "is_recurring": t.is_recurring,
         "months_duration": t.months_duration,
         "approved": t.approved,
         "note": t.note or "",
@@ -1301,7 +1532,7 @@ def _build_transaction_export_csv_response(transactions, filename):
     writer = csv.writer(response)
     writer.writerow([
         "Datum", "Popis", "Typ", "Kategorie", "Subkategorie",
-        "Částka (Kč)", "Za koho", "Na kolik měsíců",
+        "Částka (Kč)", "Za koho", "Opakující se", "Na kolik měsíců",
         "Schváleno", "Poznámka", "Kdo zapsal", "Datum zapsání", "Importováno", "Investiční skupina",
         "Instituce",
     ])
@@ -1314,6 +1545,7 @@ def _build_transaction_export_csv_response(transactions, filename):
             t.subcategory.name if t.subcategory else "",
             str(t.amount),
             t.get_payment_for_display(),
+            "Ano" if t.is_recurring else "Ne",
             t.months_duration,
             "Ano" if t.approved else "Ne",
             t.note or "",
@@ -1387,6 +1619,10 @@ def _normalize_transaction_rows(rows, user):
             months_duration = int(row_lower.get("na kolik měsíců") or row_lower.get("na kolik mesicu") or row_lower.get("months_duration") or 0)
         except Exception:
             months_duration = 0
+        is_recurring = _parse_boolean(
+            row_lower.get("opakující se") or row_lower.get("opakujici se") or row_lower.get("is_recurring"),
+            default=False,
+        )
         normalized.append({
             "date": date.isoformat(),
             "description": description,
@@ -1395,6 +1631,7 @@ def _normalize_transaction_rows(rows, user):
             "subcategory_id": subcategory.id if subcategory else None,
             "amount": str(amount),
             "payment_for": _parse_payment_for(row_lower.get("za koho") or row_lower.get("payment_for")),
+            "is_recurring": is_recurring,
             "months_duration": months_duration,
             "approved": _parse_boolean(row_lower.get("schváleno") or row_lower.get("schvaleno") or row_lower.get("approved"), default=False),
             "note": (row_lower.get("poznámka") or row_lower.get("poznamka") or row_lower.get("note") or "").strip(),
@@ -1531,6 +1768,7 @@ def _serialize_recurring_for_json(rp):
         "start_date": rp.start_date.isoformat(),
         "active": rp.active,
         "permanent": rp.permanent,
+        "owner_username": rp.owner.username if rp.owner else "",
         "paid_dates": [d.isoformat() for d in paid],
     }
 
@@ -1542,6 +1780,7 @@ def _build_recurring_export_csv_response(recurring_qs, filename):
     writer = csv.writer(response)
     writer.writerow([
         "ID", "Název", "Částka (Kč)", "Frekvence (měsíce)", "Počáteční datum",
+        "Vlastník",
         "Aktivní", "Trvalé", "Uhrazené termíny",
     ])
     for rp in recurring_qs:
@@ -1553,6 +1792,7 @@ def _build_recurring_export_csv_response(recurring_qs, filename):
             str(rp.amount),
             rp.frequency_months,
             rp.start_date.isoformat(),
+            rp.owner.username if rp.owner else "",
             "Ano" if rp.active else "Ne",
             "Ano" if rp.permanent else "Ne",
             paid_str,
@@ -1610,6 +1850,14 @@ def _normalize_recurring_rows(rows):
         if not name or amount is None or not start_date:
             errors.append(f"Řádek {idx}: povinná pole jsou název, částka a počáteční datum.")
             continue
+        owner_username = (
+            row_lower.get("vlastník")
+            or row_lower.get("vlastnik")
+            or row_lower.get("owner_username")
+            or row_lower.get("owner")
+            or ""
+        )
+        owner_username = str(owner_username).strip()
         paid_raw = row_lower.get("uhrazené termíny") or row_lower.get("uhrazene terminy") or row_lower.get("paid_dates")
         paid_dates = _parse_paid_dates_cell(paid_raw)
         row_id = row_lower.get("id")
@@ -1628,6 +1876,7 @@ def _normalize_recurring_rows(rows):
                 row_lower.get("trvalé") or row_lower.get("trvale") or row_lower.get("permanent"),
                 default=False,
             ),
+            "owner_username": owner_username,
             "paid_dates": paid_dates,
         })
     return normalized, errors
@@ -2129,6 +2378,7 @@ def import_transactions(request):
                     subcategory_id=new_item.get("subcategory_id"),
                     amount=_parse_decimal_or_none(new_item.get("amount")) or Decimal("0"),
                     payment_for=new_item.get("payment_for") or PaymentFor.SELF,
+                    is_recurring=bool(new_item.get("is_recurring")),
                     months_duration=new_item.get("months_duration") or 0,
                     approved=bool(new_item.get("approved")),
                     note=new_item.get("note") or "",
@@ -2154,6 +2404,7 @@ def import_transactions(request):
                 subcategory_id=item.get("subcategory_id"),
                 amount=_parse_decimal_or_none(item.get("amount")) or Decimal("0"),
                 payment_for=item.get("payment_for") or PaymentFor.SELF,
+                is_recurring=bool(item.get("is_recurring")),
                 months_duration=item.get("months_duration") or 0,
                 approved=bool(item.get("approved")),
                 note=item.get("note") or "",
@@ -2337,6 +2588,10 @@ def import_investment_observations(request):
 
 
 def _create_recurring_from_import_item(item):
+    owner = None
+    ou = (item.get("owner_username") or item.get("owner") or "").strip()
+    if ou:
+        owner = User.objects.filter(username__iexact=ou).first()
     rp = RecurringPayment.objects.create(
         name=item["name"].strip(),
         amount=_parse_decimal_or_none(item.get("amount")) or Decimal("0"),
@@ -2344,6 +2599,7 @@ def _create_recurring_from_import_item(item):
         start_date=_parse_date_or_none(item.get("start_date")),
         active=bool(item.get("active", True)),
         permanent=bool(item.get("permanent")),
+        owner=owner,
     )
     _sync_recurring_paid_dates(rp, item.get("paid_dates") or [])
     return rp
@@ -2353,7 +2609,7 @@ def _create_recurring_from_import_item(item):
 def export_recurring_payments(request):
     """Export trvalých plateb (včetně uhrazených termínů) do CSV nebo JSON."""
     export_format = request.GET.get("format", "csv")
-    recurring_qs = RecurringPayment.objects.prefetch_related("paid_dates").order_by("start_date", "id")
+    recurring_qs = RecurringPayment.objects.select_related("owner").prefetch_related("paid_dates").order_by("start_date", "id")
     filename_base = "trvale_platby"
     if export_format == "json":
         payload = {
@@ -2528,6 +2784,7 @@ def download_import_template(request, dataset, template_format):
             "Částka (Kč)": "12000.00",
             "Frekvence (měsíce)": "1",
             "Počáteční datum": "2026-01-05",
+            "Vlastník": "jirka",
             "Aktivní": "Ano",
             "Trvalé": "Ne",
             "Uhrazené termíny": "2026-05-05",

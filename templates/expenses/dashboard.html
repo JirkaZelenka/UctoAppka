@@ -248,6 +248,11 @@
                                             (Imp)
                                         </span>
                                     {% endif %}
+                                    {% if transaction.is_recurring %}
+                                        <span class="badge bg-warning text-dark text-decoration-none ms-1" title="Opakující se transakce">
+                                            (R)
+                                        </span>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     {% if transaction.transaction_type == 'INCOME' %}

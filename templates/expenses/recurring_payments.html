@@ -6,6 +6,22 @@
 {% block content %}
 <div class="row">
     <div class="col-md-6">
+        <div class="card mb-3 border-secondary recurring-owner-filter-card">
+            <div class="card-body py-2 px-3">
+                <form method="get" class="mb-0">
+                    <label class="form-label small text-muted mb-1">Zobrazit platby — vlastník</label>
+                    <div class="input-group input-group-sm">
+                        <select name="owner" class="form-select" aria-label="Filtrovat podle vlastníka" onchange="this.form.submit()">
+                            <option value="both" {% if owner_filter == 'both' %}selected{% endif %}>Oba</option>
+                            <option value="user1" {% if owner_filter == 'user1' %}selected{% endif %}>{{ split_user1_label }}</option>
+                            <option value="user2" {% if owner_filter == 'user2' %}selected{% endif %}>{{ split_user2_label }}</option>
+                        </select>
+                        {% if summary_sort_by %}<input type="hidden" name="summary_sort" value="{{ summary_sort_by }}">{% endif %}
+                        {% if summary_sort_order %}<input type="hidden" name="summary_order" value="{{ summary_sort_order }}">{% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0">
@@ -15,6 +31,7 @@
             <div class="card-body">
                 <form method="post">
                     {% csrf_token %}
+                    <input type="hidden" name="return_owner" value="{{ owner_filter }}">
                     <div class="mb-3">
                         <label class="form-label">{{ form.name.label }}</label>
                         {{ form.name }}
@@ -22,6 +39,10 @@
                     <div class="mb-3">
                         <label class="form-label">{{ form.amount.label }}</label>
                         {{ form.amount }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.owner.label }}</label>
+                        {{ form.owner }}
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
@@ -68,6 +89,7 @@
                     <table class="table table-sm table-hover mb-0 recurring-summary-table">
                         <colgroup>
                             <col class="recurring-sum-col-name">
+                            <col class="recurring-sum-col-owner">
                             <col class="recurring-sum-col-amt">
                             <col class="recurring-sum-col-freq">
                             <col class="recurring-sum-col-month">
@@ -75,17 +97,19 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th><a class="text-decoration-none text-dark" href="?summary_sort=name&amp;summary_order={% if summary_sort_by == 'name' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Název {% if summary_sort_by == 'name' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
-                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?summary_sort=amount&amp;summary_order={% if summary_sort_by == 'amount' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Částka {% if summary_sort_by == 'amount' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
-                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?summary_sort=frequency&amp;summary_order={% if summary_sort_by == 'frequency' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Frekvence {% if summary_sort_by == 'frequency' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
-                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?summary_sort=monthly&amp;summary_order={% if summary_sort_by == 'monthly' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Celkem za měsíc {% if summary_sort_by == 'monthly' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
-                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?summary_sort=yearly&amp;summary_order={% if summary_sort_by == 'yearly' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Celkem za rok {% if summary_sort_by == 'yearly' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th><a class="text-decoration-none text-dark" href="?owner={{ owner_filter }}&amp;summary_sort=name&amp;summary_order={% if summary_sort_by == 'name' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Název {% if summary_sort_by == 'name' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-center px-1 py-1 small text-muted text-nowrap" title="Vlastník">Vl.</th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?owner={{ owner_filter }}&amp;summary_sort=amount&amp;summary_order={% if summary_sort_by == 'amount' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Částka {% if summary_sort_by == 'amount' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?owner={{ owner_filter }}&amp;summary_sort=frequency&amp;summary_order={% if summary_sort_by == 'frequency' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Frekvence {% if summary_sort_by == 'frequency' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?owner={{ owner_filter }}&amp;summary_sort=monthly&amp;summary_order={% if summary_sort_by == 'monthly' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Celkem za měsíc {% if summary_sort_by == 'monthly' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
+                                <th class="text-nowrap"><a class="text-decoration-none text-dark" href="?owner={{ owner_filter }}&amp;summary_sort=yearly&amp;summary_order={% if summary_sort_by == 'yearly' and summary_sort_order == 'asc' %}desc{% else %}asc{% endif %}">Celkem za rok {% if summary_sort_by == 'yearly' %}{% if summary_sort_order == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a></th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for row in summary_rows %}
                             <tr>
                                 <td>{% include 'expenses/recurring_payment_name.html' with payment=row.payment only %}</td>
+                                {% include 'expenses/recurring_payment_owner_cell.html' with payment=row.payment only %}
                                 <td><strong>{{ row.payment.amount|czech_int }} Kč</strong></td>
                                 <td>{{ row.payment.frequency_months }} měs.</td>
                                 <td><strong>{{ row.monthly_total|czech_int }} Kč</strong></td>
@@ -93,7 +117,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="5" class="text-center text-muted py-3">Žádné aktivní trvalé platby</td>
+                                <td colspan="6" class="text-center text-muted py-3">Žádné aktivní trvalé platby</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -104,6 +128,7 @@
                     <table class="table table-sm mb-0 recurring-summary-footer-table">
                         <colgroup>
                             <col class="recurring-sum-col-name">
+                            <col class="recurring-sum-col-owner">
                             <col class="recurring-sum-col-amt">
                             <col class="recurring-sum-col-freq">
                             <col class="recurring-sum-col-month">
@@ -111,24 +136,24 @@
                         </colgroup>
                         <thead>
                             <tr class="small text-muted border-0">
-                                <th scope="col" colspan="3" class="fw-normal border-0 pb-0 pt-1"></th>
+                                <th scope="col" colspan="4" class="fw-normal border-0 pb-0 pt-1"></th>
                                 <th scope="col" class="text-end fw-normal border-0 pb-0 pt-1 text-nowrap">Měsíčně</th>
                                 <th scope="col" class="text-end fw-normal border-0 pb-0 pt-1 text-nowrap">Ročně</th>
                             </tr>
                         </thead>
                         <tbody class="small">
                             <tr>
-                                <td class="py-1" colspan="3"><strong>Povinné</strong></td>
+                                <td class="py-1" colspan="4"><strong>Povinné</strong></td>
                                 <td class="text-end text-nowrap py-1">{{ summary_perm_monthly|czech_int }} Kč</td>
                                 <td class="text-end text-nowrap py-1"><strong>{{ summary_perm_yearly|czech_int }} Kč</strong></td>
                             </tr>
                             <tr>
-                                <td class="py-1" colspan="3"><strong>Nepovinné</strong></td>
+                                <td class="py-1" colspan="4"><strong>Nepovinné</strong></td>
                                 <td class="text-end text-nowrap py-1">{{ summary_non_monthly|czech_int }} Kč</td>
                                 <td class="text-end text-nowrap py-1"><strong>{{ summary_non_yearly|czech_int }} Kč</strong></td>
                             </tr>
                             <tr class="border-top">
-                                <td class="py-1" colspan="3"><strong>Celkem</strong></td>
+                                <td class="py-1" colspan="4"><strong>Celkem</strong></td>
                                 <td class="text-end text-nowrap py-1"><strong>{{ summary_total_monthly|czech_int }} Kč</strong></td>
                                 <td class="text-end text-nowrap py-1"><strong>{{ summary_total_yearly|czech_int }} Kč</strong></td>
                             </tr>
@@ -148,13 +173,22 @@
                 </h4>
             </div>
             <div class="card-body">
-                {% with colspan=5 %}
+                {% with colspan=6 %}
                 {% if future_rows or current_rows %}
                 <div class="table-responsive">
                     <table class="table table-hover recurring-section-table mb-0">
+                        <colgroup>
+                            <col>
+                            <col class="recurring-list-col-owner">
+                            <col>
+                            <col>
+                            <col>
+                            <col class="recurring-list-col-pay">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>Název</th>
+                                <th class="text-center px-1 small text-muted text-nowrap" title="Vlastník">Vl.</th>
                                 <th>Částka</th>
                                 <th>Frekvence</th>
                                 <th>Termín</th>
@@ -164,20 +198,32 @@
                         <tbody>
                             {% if future_rows %}
                             <tr class="section-header recurring-collapsible-header" data-target-class="recurring-group-future" data-divider-class="recurring-divider-future-current" aria-expanded="true">
-                                <td colspan="{{ colspan }}" class="recurring-section-heading recurring-section-future">
+                                <td colspan="2" class="recurring-section-heading recurring-section-future">
                                     <i class="bi bi-caret-down-fill recurring-section-toggle-icon"></i>
                                     <i class="bi bi-calendar-plus"></i> Následující měsíc — {{ next_month_title }}
                                 </td>
+                                <td class="recurring-section-heading recurring-section-future text-end align-middle recurring-section-sum-cell">
+                                    <strong>{{ future_rows_amount_sum|czech_int }} Kč</strong>
+                                </td>
+                                <td colspan="3" class="recurring-section-heading recurring-section-future"></td>
                             </tr>
                             {% for item in future_rows %}
                             <tr class="recurring-payment-row recurring-group-future {% if item.is_paid %}recurring-paid-row{% endif %}">
                                 <td>{% include 'expenses/recurring_payment_name.html' with payment=item.payment only %}</td>
+                                {% include 'expenses/recurring_payment_owner_cell.html' with payment=item.payment only %}
                                 <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
                                 <td>{{ item.payment.frequency_months }} měsíců</td>
                                 <td>{{ item.display_date|date:"d.m.Y" }}</td>
                                 <td class="align-middle text-end text-nowrap recurring-pay-cell">
+                                    {% if item.suggested_transaction %}
+                                    <span
+                                        class="text-warning me-2 recurring-suggestion-icon"
+                                        title="Možná shoda: {{ item.suggested_transaction.description }} ({{ item.suggested_transaction.amount|czech_int }} Kč, {{ item.suggested_transaction.date|date:'d.m.Y' }})"
+                                    >?</span>
+                                    {% endif %}
                                     <form method="post" action="{% url 'recurring_payment_toggle_paid' %}" class="d-inline-flex align-items-center justify-content-end mb-0">
                                         {% csrf_token %}
+                                        <input type="hidden" name="return_owner" value="{{ owner_filter }}">
                                         <input type="hidden" name="payment_id" value="{{ item.payment.pk }}">
                                         <input type="hidden" name="due_date" value="{{ item.display_date|date:'Y-m-d' }}">
                                         <input type="hidden" name="set_paid" value="{% if item.is_paid %}1{% else %}0{% endif %}">
@@ -199,20 +245,32 @@
 
                             {% if current_rows %}
                             <tr class="section-header recurring-collapsible-header" data-target-class="recurring-group-current" data-divider-class="recurring-divider-future-current" aria-expanded="true">
-                                <td colspan="{{ colspan }}" class="recurring-section-heading recurring-section-current">
+                                <td colspan="2" class="recurring-section-heading recurring-section-current">
                                     <i class="bi bi-caret-down-fill recurring-section-toggle-icon"></i>
                                     <i class="bi bi-calendar-day"></i> Aktuální měsíc — {{ current_month_title }}
                                 </td>
+                                <td class="recurring-section-heading recurring-section-current text-end align-middle recurring-section-sum-cell">
+                                    <strong>{{ current_rows_amount_sum|czech_int }} Kč</strong>
+                                </td>
+                                <td colspan="3" class="recurring-section-heading recurring-section-current"></td>
                             </tr>
                             {% for item in current_rows %}
                             <tr class="recurring-payment-row recurring-group-current {% if item.is_paid %}recurring-paid-row{% endif %}">
                                 <td>{% include 'expenses/recurring_payment_name.html' with payment=item.payment only %}</td>
+                                {% include 'expenses/recurring_payment_owner_cell.html' with payment=item.payment only %}
                                 <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
                                 <td>{{ item.payment.frequency_months }} měsíců</td>
                                 <td>{{ item.display_date|date:"d.m.Y" }}</td>
                                 <td class="align-middle text-end text-nowrap recurring-pay-cell">
+                                    {% if item.suggested_transaction %}
+                                    <span
+                                        class="text-warning me-2 recurring-suggestion-icon"
+                                        title="Možná shoda: {{ item.suggested_transaction.description }} ({{ item.suggested_transaction.amount|czech_int }} Kč, {{ item.suggested_transaction.date|date:'d.m.Y' }})"
+                                    >?</span>
+                                    {% endif %}
                                     <form method="post" action="{% url 'recurring_payment_toggle_paid' %}" class="d-inline-flex align-items-center justify-content-end mb-0">
                                         {% csrf_token %}
+                                        <input type="hidden" name="return_owner" value="{{ owner_filter }}">
                                         <input type="hidden" name="payment_id" value="{{ item.payment.pk }}">
                                         <input type="hidden" name="due_date" value="{{ item.display_date|date:'Y-m-d' }}">
                                         <input type="hidden" name="set_paid" value="{% if item.is_paid %}1{% else %}0{% endif %}">
@@ -238,9 +296,18 @@
                 {% endif %}
                 <div class="table-responsive recurring-past-scroll mt-0">
                     <table class="table table-hover recurring-section-table mb-0">
+                        <colgroup>
+                            <col>
+                            <col class="recurring-list-col-owner">
+                            <col>
+                            <col>
+                            <col>
+                            <col class="recurring-list-col-pay">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>Název</th>
+                                <th class="text-center px-1 small text-muted text-nowrap" title="Vlastník">Vl.</th>
                                 <th>Částka</th>
                                 <th>Frekvence</th>
                                 <th>Termín</th>
@@ -258,12 +325,20 @@
                             {% for item in past_rows %}
                             <tr class="recurring-payment-row recurring-group-past {% if item.is_paid %}recurring-paid-row{% endif %}">
                                 <td>{% include 'expenses/recurring_payment_name.html' with payment=item.payment only %}</td>
+                                {% include 'expenses/recurring_payment_owner_cell.html' with payment=item.payment only %}
                                 <td><strong>{{ item.payment.amount|czech_int }} Kč</strong></td>
                                 <td>{{ item.payment.frequency_months }} měsíců</td>
                                 <td>{{ item.display_date|date:"d.m.Y" }}</td>
                                 <td class="align-middle text-end text-nowrap recurring-pay-cell">
+                                    {% if item.suggested_transaction %}
+                                    <span
+                                        class="text-warning me-2 recurring-suggestion-icon"
+                                        title="Možná shoda: {{ item.suggested_transaction.description }} ({{ item.suggested_transaction.amount|czech_int }} Kč, {{ item.suggested_transaction.date|date:'d.m.Y' }})"
+                                    >?</span>
+                                    {% endif %}
                                     <form method="post" action="{% url 'recurring_payment_toggle_paid' %}" class="d-inline-flex align-items-center justify-content-end mb-0">
                                         {% csrf_token %}
+                                        <input type="hidden" name="return_owner" value="{{ owner_filter }}">
                                         <input type="hidden" name="payment_id" value="{{ item.payment.pk }}">
                                         <input type="hidden" name="due_date" value="{{ item.display_date|date:'Y-m-d' }}">
                                         <input type="hidden" name="set_paid" value="{% if item.is_paid %}1{% else %}0{% endif %}">
@@ -360,6 +435,13 @@
     .recurring-section-table .recurring-pay-cell {
         width: 1%;
     }
+    .recurring-suggestion-icon {
+        display: inline-block;
+        width: 1.1rem;
+        text-align: center;
+        font-weight: 700;
+        cursor: help;
+    }
     .recurring-past-scroll {
         max-height: min(420px, 55vh);
         overflow-y: auto;
@@ -371,24 +453,42 @@
         width: 100%;
     }
     .recurring-summary-table col.recurring-sum-col-name,
-    .recurring-summary-footer-table col.recurring-sum-col-name { width: 30%; }
+    .recurring-summary-footer-table col.recurring-sum-col-name { width: 24%; }
+    .recurring-summary-table col.recurring-sum-col-owner,
+    .recurring-summary-footer-table col.recurring-sum-col-owner { width: 6%; min-width: 3rem; max-width: 4.5rem; }
     .recurring-summary-table col.recurring-sum-col-amt,
-    .recurring-summary-footer-table col.recurring-sum-col-amt { width: 14%; }
+    .recurring-summary-footer-table col.recurring-sum-col-amt { width: 12%; }
     .recurring-summary-table col.recurring-sum-col-freq,
-    .recurring-summary-footer-table col.recurring-sum-col-freq { width: 12%; }
+    .recurring-summary-footer-table col.recurring-sum-col-freq { width: 10%; }
     .recurring-summary-table col.recurring-sum-col-month,
     .recurring-summary-footer-table col.recurring-sum-col-month { width: 20%; }
     .recurring-summary-table col.recurring-sum-col-year,
-    .recurring-summary-footer-table col.recurring-sum-col-year { width: 24%; }
-    .recurring-summary-table tbody td:nth-child(2),
-    .recurring-summary-table tbody td:nth-child(4),
-    .recurring-summary-table tbody td:nth-child(5) {
+    .recurring-summary-footer-table col.recurring-sum-col-year { width: 28%; }
+    .recurring-summary-table tbody td:nth-child(3),
+    .recurring-summary-table tbody td:nth-child(5),
+    .recurring-summary-table tbody td:nth-child(6) {
         text-align: right;
     }
-    .recurring-summary-table thead th:nth-child(2),
-    .recurring-summary-table thead th:nth-child(4),
-    .recurring-summary-table thead th:nth-child(5) {
+    .recurring-summary-table thead th:nth-child(3),
+    .recurring-summary-table thead th:nth-child(5),
+    .recurring-summary-table thead th:nth-child(6) {
         text-align: right;
+    }
+    .recurring-owner-badge {
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.2em 0.35em;
+        max-width: 4rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: middle;
+    }
+    .recurring-list-col-owner {
+        width: 3.5rem;
+        max-width: 4.25rem;
+    }
+    .recurring-list-col-pay {
+        width: 1%;
     }
     .recurring-permanent-name {
         display: inline-block;
@@ -397,6 +497,10 @@
         border-radius: 6px;
         font-weight: 600;
         color: inherit;
+    }
+    .recurring-section-sum-cell strong {
+        font-size: 1rem;
+        letter-spacing: -0.02em;
     }
 </style>
 

@@ -114,7 +114,17 @@
                                         <div class="toggle-group">
                                             <button type="button" class="btn btn-outline-danger toggle-transaction-type" data-value="EXPENSE">Výdaj</button>
                                             <button type="button" class="btn btn-outline-success toggle-transaction-type" data-value="INCOME">Příjem</button>
+                                            <button type="button" class="btn btn-outline-warning toggle-transaction-type" data-value="INVESTMENT">Investice</button>
                                         </div>
+                                    </div>
+
+                                    <div class="transaction-tile" id="investment-field-create" style="display: none;">
+                                        <label class="form-label">{{ form.investment.label }}</label>
+                                        {{ form.investment }}
+                                        {% if form.investment.errors %}
+                                            <div class="text-danger small mt-1">{{ form.investment.errors|join:", " }}</div>
+                                        {% endif %}
+                                        <small class="form-text text-muted">Zobrazí se ve sloupci Investováno na stránce Investice.</small>
                                     </div>
 
                                     <div class="transaction-tile">
@@ -160,9 +170,15 @@
                                                 <button type="button" class="btn btn-outline-primary toggle-payment-for" data-value="SHARED">Společný</button>
                                             </div>
                                         </div>
-                                        <div class="transaction-tile">
+                                        <div class="transaction-tile" id="transaction-recurring-institution-block">
                                             <div class="row">
                                                 <div class="col-md-6 mb-3">
+                                                    <div class="form-check mb-2">
+                                                        {{ form.is_recurring }}
+                                                        <label class="form-check-label" for="{{ form.is_recurring.id_for_label }}">
+                                                            {{ form.is_recurring.label }}
+                                                        </label>
+                                                    </div>
                                                     <label class="form-label">{{ form.months_duration.label }}</label>
                                                     {{ form.months_duration }}
                                                 </div>
@@ -373,6 +389,11 @@
                                                     (Imp)
                                                 </span>
                                             {% endif %}
+                                            {% if transaction.is_recurring %}
+                                                <span class="badge bg-warning text-dark text-decoration-none ms-1" title="Opakující se transakce">
+                                                    (R)
+                                                </span>
+                                            {% endif %}
                                         </td>
                                         <td>
                                             {% if transaction.transaction_type == 'INCOME' %}
@@ -447,19 +468,28 @@
         const categorySelect = document.getElementById('{{ form.category.id_for_label }}');
         const subcategorySelect = document.getElementById('{{ form.subcategory.id_for_label }}');
         const amountField = document.getElementById('{{ form.amount.id_for_label }}');
+        const recurringField = document.getElementById('{{ form.is_recurring.id_for_label }}');
+        const monthsDurationField = document.getElementById('{{ form.months_duration.id_for_label }}');
         const dateField = document.getElementById('{{ form.date.id_for_label }}');
         const descriptionField = document.getElementById('{{ form.description.id_for_label }}');
         const saveBtn = document.getElementById('save-transaction-btn');
 
+        const investmentSelect = document.getElementById('{{ form.investment.id_for_label }}');
+        const investmentBlock = document.getElementById('investment-field-create');
+        const recurringInstitutionBlock = document.getElementById('transaction-recurring-institution-block');
+
         function setToggleState(buttons, value) {
             buttons.forEach(btn => {
                 const isActive = btn.dataset.value === value;
+                const v = btn.dataset.value;
                 btn.classList.toggle('active', isActive);
                 if (btn.classList.contains('toggle-transaction-type')) {
-                    btn.classList.toggle('btn-danger', isActive && btn.dataset.value === 'EXPENSE');
-                    btn.classList.toggle('btn-success', isActive && btn.dataset.value === 'INCOME');
-                    btn.classList.toggle('btn-outline-danger', !isActive && btn.dataset.value === 'EXPENSE');
-                    btn.classList.toggle('btn-outline-success', !isActive && btn.dataset.value === 'INCOME');
+                    btn.classList.toggle('btn-danger', isActive && v === 'EXPENSE');
+                    btn.classList.toggle('btn-success', isActive && v === 'INCOME');
+                    btn.classList.toggle('btn-warning', isActive && v === 'INVESTMENT');
+                    btn.classList.toggle('btn-outline-danger', !isActive && v === 'EXPENSE');
+                    btn.classList.toggle('btn-outline-success', !isActive && v === 'INCOME');
+                    btn.classList.toggle('btn-outline-warning', !isActive && v === 'INVESTMENT');
                 } else {
                     btn.classList.toggle('btn-primary', isActive);
                     btn.classList.toggle('btn-outline-primary', !isActive);
@@ -470,21 +500,37 @@
         const transactionButtons = document.querySelectorAll('.toggle-transaction-type');
         const paymentButtons = document.querySelectorAll('.toggle-payment-for');
 
-        function applyTransactionType(value) {
+        function applyTransactionType(value, resetCategories) {
+            if (resetCategories === undefined) {
+                resetCategories = true;
+            }
             transactionTypeInput.value = value;
             setToggleState(transactionButtons, value);
+            const catMatch = value === 'INVESTMENT' ? 'EXPENSE' : value;
             Array.from(categorySelect.options).forEach(option => {
                 if (!option.value) {
                     option.hidden = false;
                     return;
                 }
-                option.hidden = option.dataset.type !== value;
+                option.hidden = option.dataset.type !== catMatch;
             });
-            if (categorySelect) {
-                categorySelect.value = '';
+            if (resetCategories) {
+                if (categorySelect) {
+                    categorySelect.value = '';
+                }
+                if (subcategorySelect) {
+                    subcategorySelect.innerHTML = '<option value="">---------</option>';
+                }
             }
-            if (subcategorySelect) {
-                subcategorySelect.innerHTML = '<option value="">---------</option>';
+            if (value === 'INVESTMENT') {
+                if (investmentBlock) investmentBlock.style.display = 'block';
+                if (recurringInstitutionBlock) recurringInstitutionBlock.style.display = 'none';
+                if (recurringField) recurringField.checked = false;
+                if (monthsDurationField) monthsDurationField.value = '0';
+            } else {
+                if (investmentBlock) investmentBlock.style.display = 'none';
+                if (recurringInstitutionBlock) recurringInstitutionBlock.style.display = 'block';
+                if (investmentSelect) investmentSelect.value = '';
             }
             validateCreateForm();
         }
@@ -494,10 +540,10 @@
             setToggleState(paymentButtons, value);
         }
 
-        transactionButtons.forEach(btn => btn.addEventListener('click', () => applyTransactionType(btn.dataset.value)));
+        transactionButtons.forEach(btn => btn.addEventListener('click', () => applyTransactionType(btn.dataset.value, true)));
         paymentButtons.forEach(btn => btn.addEventListener('click', () => applyPaymentFor(btn.dataset.value)));
 
-        applyTransactionType(transactionTypeInput.value || 'EXPENSE');
+        applyTransactionType(transactionTypeInput.value || 'EXPENSE', false);
         applyPaymentFor(paymentForInput.value || 'SELF');
 
         if (amountField) {
@@ -510,18 +556,26 @@
         }
 
         function validateCreateForm() {
+            const typeVal = transactionTypeInput.value;
+            const recurringOk = typeVal === 'INVESTMENT'
+                || !recurringField
+                || !recurringField.checked
+                || (monthsDurationField && Number(monthsDurationField.value) > 0);
+            const investmentOk = typeVal !== 'INVESTMENT' || (investmentSelect && investmentSelect.value);
             const isValid = amountField.value && Number(amountField.value) > 0
-                && transactionTypeInput.value
+                && typeVal
                 && categorySelect.value
                 && subcategorySelect.value
                 && dateField.value
-                && descriptionField.value.trim();
+                && descriptionField.value.trim()
+                && recurringOk
+                && investmentOk;
             if (saveBtn) {
                 saveBtn.disabled = !isValid;
             }
         }
 
-        [categorySelect, subcategorySelect, dateField, descriptionField].forEach(el => {
+        [categorySelect, subcategorySelect, dateField, descriptionField, recurringField, monthsDurationField, investmentSelect].forEach(el => {
             if (el) {
                 el.addEventListener('change', validateCreateForm);
                 el.addEventListener('input', validateCreateForm);

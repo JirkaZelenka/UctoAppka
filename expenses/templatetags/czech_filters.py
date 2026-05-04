@@ -50,3 +50,16 @@ def czech_int(value):
         # If conversion fails, return '0' as safe fallback
         return '0'
 
+
+@register.filter(name='owner_badge_class')
+def owner_badge_class(user):
+    """CSS třída odznaku vlastníka (stejné jako investice)."""
+    if not user:
+        return 'owner-badge-default'
+    un = (getattr(user, 'username', None) or '').lower()
+    if un == 'zuzka':
+        return 'owner-badge-zuzka'
+    if un == 'jirka':
+        return 'owner-badge-jirka'
+    return 'owner-badge-default'
+

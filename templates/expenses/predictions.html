@@ -26,11 +26,47 @@
                 <div class="row mb-3">
                     <div class="col-12">
                         <div class="stat-card">
-                            <div class="stat-label">Očekávané výdaje</div>
-                            <div class="stat-value expense">{{ expected_expenses|czech_int }} Kč</div>
+                            <div class="stat-label">Očekávané příjmy</div>
+                            <div class="stat-value income">{{ expected_income|czech_int }} Kč</div>
                             <div class="stat-split">
-                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ expected_expenses_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ expected_expenses_user2|czech_int }} Kč</div>
+                                <div class="stat-split-left" data-label="{{ split_user1_label }} — Příjmy (průměr)">{{ expected_income_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }} — Příjmy (průměr)">{{ expected_income_user2|czech_int }} Kč</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="stat-card">
+                            <div class="stat-label">Očekávané výdaje</div>
+                            <div class="stat-value expense">{{ expected_total_expenses|czech_int }} Kč</div>
+                            <div class="stat-split stat-split-person-nested">
+                                <div class="stat-split-left" data-label="{{ split_user1_label }}">
+                                    <div class="stat-split-main-line">{{ expected_expenses_user1|czech_int }} Kč</div>
+                                    <div class="stat-split-nested" aria-label="Rozpad výdajů">
+                                        <div class="stat-split-nested-left" data-label="Trvalé platby">{{ expected_recurring_user1|czech_int }} Kč</div>
+                                        <div class="stat-split-nested-right" data-label="Ostatní výdaje (průměr)">{{ other_expenses_average_user1|czech_int }} Kč</div>
+                                    </div>
+                                </div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }}">
+                                    <div class="stat-split-main-line">{{ expected_expenses_user2|czech_int }} Kč</div>
+                                    <div class="stat-split-nested" aria-label="Rozpad výdajů">
+                                        <div class="stat-split-nested-left" data-label="Trvalé platby">{{ expected_recurring_user2|czech_int }} Kč</div>
+                                        <div class="stat-split-nested-right" data-label="Ostatní výdaje (průměr)">{{ other_expenses_average_user2|czech_int }} Kč</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="stat-card">
+                            <div class="stat-label">Očekávané investice</div>
+                            <div class="stat-value investment">{{ expected_investment|czech_int }} Kč</div>
+                            <div class="stat-split">
+                                <div class="stat-split-left" data-label="{{ split_user1_label }} — Investice (průměr)">{{ expected_investment_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }} — Investice (průměr)">{{ expected_investment_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>
@@ -65,9 +101,33 @@
                         <div class="stat-card">
                             <div class="stat-label">Skutečné výdaje</div>
                             <div class="stat-value expense">{{ actual_expenses|czech_int }} Kč</div>
+                            <div class="stat-split stat-split-person-nested">
+                                <div class="stat-split-left" data-label="{{ split_user1_label }}">
+                                    <div class="stat-split-main-line">{{ actual_expenses_user1|czech_int }} Kč</div>
+                                    <div class="stat-split-nested" aria-label="Rozpad výdajů">
+                                        <div class="stat-split-nested-left" data-label="Trvalé platby">{{ actual_recurring_user1|czech_int }} Kč</div>
+                                        <div class="stat-split-nested-right" data-label="Ostatní výdaje">{{ actual_other_user1|czech_int }} Kč</div>
+                                    </div>
+                                </div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }}">
+                                    <div class="stat-split-main-line">{{ actual_expenses_user2|czech_int }} Kč</div>
+                                    <div class="stat-split-nested" aria-label="Rozpad výdajů">
+                                        <div class="stat-split-nested-left" data-label="Trvalé platby">{{ actual_recurring_user2|czech_int }} Kč</div>
+                                        <div class="stat-split-nested-right" data-label="Ostatní výdaje">{{ actual_other_user2|czech_int }} Kč</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="stat-card">
+                            <div class="stat-label">Skutečné investice</div>
+                            <div class="stat-value investment">{{ actual_investment|czech_int }} Kč</div>
                             <div class="stat-split">
-                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ actual_expenses_user1|czech_int }} Kč</div>
-                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ actual_expenses_user2|czech_int }} Kč</div>
+                                <div class="stat-split-left" data-label="{{ split_user1_label }}">{{ actual_investment_user1|czech_int }} Kč</div>
+                                <div class="stat-split-right" data-label="{{ split_user2_label }}">{{ actual_investment_user2|czech_int }} Kč</div>
                             </div>
                         </div>
                     </div>
@@ -77,21 +137,86 @@
     </div>
 </div>
 
-{% if expected_recurring_list %}
 <div class="row mt-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0">
-                    <i class="bi bi-arrow-repeat"></i> Trvalé platby pro {{ current_month_name }} {{ current_year }}
+                    <i class="bi bi-graph-up-arrow"></i> Příjmy, ostatní výdaje a investice
                 </h4>
             </div>
             <div class="card-body">
+                <div class="table-responsive mb-3 predictions-monthly-wrap">
+                    <table class="table table-sm table-bordered mb-0 predictions-split-monthly-table">
+                        <thead>
+                            <tr>
+                                <th class="predictions-split-source-col">Zdroj</th>
+                                <th class="text-end text-nowrap predictions-split-num-col"><span class="text-muted small">M-3</span><br>{{ prediction_month_labels.0 }}</th>
+                                <th class="text-end text-nowrap predictions-split-num-col"><span class="text-muted small">M-2</span><br>{{ prediction_month_labels.1 }}</th>
+                                <th class="text-end text-nowrap predictions-split-num-col"><span class="text-muted small">M-1</span><br>{{ prediction_month_labels.2 }}</th>
+                                <th class="text-end predictions-split-avg-col"><span class="text-muted small">Průměr</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Příjmy ({{ split_user1_label }})</strong></td>
+                                <td class="text-end">{{ income_u1_last_3_months.0|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ income_u1_last_3_months.1|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ income_u1_last_3_months.2|default:0|czech_int }} Kč</td>
+                                <td class="text-end"><strong>{{ expected_income_user1|czech_int }} Kč</strong></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Příjmy ({{ split_user2_label }})</strong></td>
+                                <td class="text-end">{{ income_u2_last_3_months.0|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ income_u2_last_3_months.1|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ income_u2_last_3_months.2|default:0|czech_int }} Kč</td>
+                                <td class="text-end"><strong>{{ expected_income_user2|czech_int }} Kč</strong></td>
+                            </tr>
+                        </tbody>
+                        <tbody class="table-group-divider">
+                            <tr>
+                                <td><strong>Ostatní výdaje ({{ split_user1_label }})</strong></td>
+                                <td class="text-end">{{ other_expenses_u1_last_3_months.0|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ other_expenses_u1_last_3_months.1|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ other_expenses_u1_last_3_months.2|default:0|czech_int }} Kč</td>
+                                <td class="text-end"><strong>{{ other_expenses_average_user1|czech_int }} Kč</strong></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Ostatní výdaje ({{ split_user2_label }})</strong></td>
+                                <td class="text-end">{{ other_expenses_u2_last_3_months.0|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ other_expenses_u2_last_3_months.1|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ other_expenses_u2_last_3_months.2|default:0|czech_int }} Kč</td>
+                                <td class="text-end"><strong>{{ other_expenses_average_user2|czech_int }} Kč</strong></td>
+                            </tr>
+                        </tbody>
+                        <tbody class="table-group-divider">
+                            <tr>
+                                <td><strong>Investice ({{ split_user1_label }})</strong></td>
+                                <td class="text-end">{{ investment_u1_last_3_months.0|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ investment_u1_last_3_months.1|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ investment_u1_last_3_months.2|default:0|czech_int }} Kč</td>
+                                <td class="text-end"><strong>{{ expected_investment_user1|czech_int }} Kč</strong></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Investice ({{ split_user2_label }})</strong></td>
+                                <td class="text-end">{{ investment_u2_last_3_months.0|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ investment_u2_last_3_months.1|default:0|czech_int }} Kč</td>
+                                <td class="text-end">{{ investment_u2_last_3_months.2|default:0|czech_int }} Kč</td>
+                                <td class="text-end"><strong>{{ expected_investment_user2|czech_int }} Kč</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                {% if expected_recurring_list %}
+                <h5 class="mb-3 mt-2">
+                    <i class="bi bi-arrow-repeat"></i> Trvalé platby pro {{ current_month_name }} {{ current_year }}
+                </h5>
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-hover predictions-recurring-table">
                         <thead>
                             <tr>
                                 <th>Název</th>
+                                <th class="text-center px-1 small text-muted text-nowrap" title="Vlastník">Vl.</th>
                                 <th>Částka</th>
                                 <th>Frekvence</th>
                                 <th>Datum platby</th>
@@ -101,6 +226,7 @@
                             {% for item in expected_recurring_list %}
                             <tr>
                                 <td>{{ item.payment.name }}</td>
+                                {% include 'expenses/recurring_payment_owner_cell.html' with payment=item.payment only %}
                                 <td><strong>{{ item.amount|czech_int }} Kč</strong></td>
                                 <td>{{ item.payment.frequency_months }} měsíců</td>
                                 <td>{{ item.occurrence_date|date:"d.m.Y" }}</td>
@@ -109,13 +235,86 @@
                         </tbody>
                     </table>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
-{% endif %}
 
 <style>
+    .stat-split.stat-split-person-nested {
+        align-items: stretch;
+    }
+    .stat-split-person-nested .stat-split-left,
+    .stat-split-person-nested .stat-split-right {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.35rem;
+        cursor: help;
+    }
+    .stat-split-main-line {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #495057;
+    }
+    .stat-split-nested {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #e9ecef;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+    .stat-split-nested-left,
+    .stat-split-nested-right {
+        flex: 1;
+        text-align: center;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #495057;
+        padding: 5px;
+        position: relative;
+        cursor: help;
+    }
+    .stat-split-nested-left {
+        border-right: 1px solid #e9ecef;
+    }
+    .stat-split-person-nested .stat-split-nested-left:hover::after,
+    .stat-split-person-nested .stat-split-nested-right:hover::after {
+        content: attr(data-label);
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.85);
+        color: white;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        white-space: nowrap;
+        z-index: 1000;
+        pointer-events: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .stat-split-person-nested .stat-split-nested-left:hover::before,
+    .stat-split-person-nested .stat-split-nested-right:hover::before {
+        content: '';
+        position: absolute;
+        bottom: calc(100% + 2px);
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        pointer-events: none;
+    }
+    .predictions-recurring-table th:nth-child(2),
+    .predictions-recurring-table td.recurring-owner-cell {
+        width: 3.5rem;
+        max-width: 4.25rem;
+    }
     .owner-badge-jirka {
         background-color: #6d4c41;
         color: #fff;
@@ -127,6 +326,23 @@
     .owner-badge-default {
         background-color: #6c757d;
         color: #fff;
+    }
+    .predictions-split-monthly-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    .predictions-split-source-col {
+        width: 30%;
+    }
+    .predictions-split-num-col {
+        width: 17.5%;
+    }
+    .predictions-split-avg-col {
+        width: 17.5%;
+    }
+    .predictions-monthly-wrap .predictions-split-num-col,
+    .predictions-monthly-wrap .predictions-split-avg-col {
+        vertical-align: bottom;
     }
 </style>
 {% endblock %}

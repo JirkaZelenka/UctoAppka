@@ -78,6 +78,7 @@ class Transaction(models.Model):
     subcategory = models.ForeignKey(Subcategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Subkategorie")
     
     # Pro výdaje - na kolik měsíců (pro předplatná)
+    is_recurring = models.BooleanField(default=False, verbose_name="Opakující se")
     months_duration = models.IntegerField(default=0, verbose_name="Na kolik měsíců (0 = jednorázové)")
     
     # Datumy
@@ -131,6 +132,14 @@ class RecurringPayment(models.Model):
         default=False,
         verbose_name="Trvalé",
         help_text="Dlouhodobá závazná platba, obtížně zrušitelná",
+    )
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recurring_payments",
+        verbose_name="Vlastník",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

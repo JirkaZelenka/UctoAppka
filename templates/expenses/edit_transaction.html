@@ -45,6 +45,12 @@
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
+                            <div class="form-check mb-2">
+                                {{ form.is_recurring }}
+                                <label class="form-check-label" for="{{ form.is_recurring.id_for_label }}">
+                                    {{ form.is_recurring.label }}
+                                </label>
+                            </div>
                             <label class="form-label">{{ form.date.label }}</label>
                             {{ form.date }}
                         </div>
