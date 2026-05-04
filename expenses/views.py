@@ -36,6 +36,7 @@ from .utils import (
     first_day_next_calendar_month,
     first_occurrence_in_month,
     has_occurrence_in_month,
+    institution_expected_total_paid,
 )
 
 
@@ -732,8 +733,8 @@ def recurring_payments(request):
         for od in pst:
             past_rows.append(_recurring_row_dict(payment, od, paid_pairs))
 
-    future_rows.sort(key=lambda r: (r['display_date'], r['payment'].id))
-    current_rows.sort(key=lambda r: (r['display_date'], r['payment'].id))
+    future_rows.sort(key=lambda r: (r['display_date'], r['payment'].id), reverse=True)
+    current_rows.sort(key=lambda r: (r['display_date'], r['payment'].id), reverse=True)
     past_rows.sort(key=lambda r: (r['display_date'], r['payment'].id), reverse=True)
 
     month_names = {
@@ -759,16 +760,18 @@ def recurring_payments(request):
     sort_order = request.GET.get('summary_order', 'desc')
     if sort_order not in ('asc', 'desc'):
         sort_order = 'desc'
-    if sort_by not in ('name', 'amount', 'frequency', 'yearly'):
+    if sort_by not in ('name', 'amount', 'frequency', 'monthly', 'yearly'):
         sort_by = 'yearly'
 
     summary_rows = []
     for p in payments:
         fm = p.frequency_months if p.frequency_months and p.frequency_months >= 1 else 1
         yearly_total = (p.amount * Decimal('12')) / Decimal(fm)
+        monthly_total = (p.amount or Decimal('0')) / Decimal(fm)
         summary_rows.append({
             'payment': p,
             'yearly_total': yearly_total,
+            'monthly_total': monthly_total,
         })
 
     def _summary_sort_key(row):
@@ -779,6 +782,8 @@ def recurring_payments(request):
             return pay.amount or Decimal('0')
         if sort_by == 'frequency':
             return pay.frequency_months or 0
+        if sort_by == 'monthly':
+            return row['monthly_total']
         return row['yearly_total']
 
     summary_rows.sort(key=_summary_sort_key, reverse=(sort_order == 'desc'))
@@ -1038,6 +1043,7 @@ def institutions(request):
         ).order_by('-date', '-created_at'),
     )
     institutions_qs = Institution.objects.select_related('owner').prefetch_related(tx_prefetch).order_by('name', 'id')
+    today = timezone.now().date()
 
     sort_by = request.GET.get('sort', 'name')
     sort_order = request.GET.get('order', 'asc')
@@ -1047,7 +1053,15 @@ def institutions(request):
     rows = []
     for inst in institutions_qs:
         tx_list = list(inst.transactions.all())
-        total_paid = sum((t.amount for t in tx_list), start=Decimal('0'))
+        tx_sum = sum((t.amount for t in tx_list), start=Decimal('0'))
+        computed_total = institution_expected_total_paid(
+            inst.price,
+            inst.frequency or '',
+            inst.start_date,
+            inst.end_date,
+            today,
+        )
+        total_paid = computed_total if computed_total is not None else tx_sum
         owner = inst.owner
         if owner:
             on = (owner.username or '').lower()

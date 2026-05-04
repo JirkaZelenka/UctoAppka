@@ -1,4 +1,5 @@
 """Obecné pomůcky pro výpočty nad daty."""
+import re
 from calendar import monthrange
 from datetime import date
 
@@ -98,3 +99,70 @@ def first_occurrence_in_month(start: date, frequency_months: int, month_start: d
 
 def has_occurrence_in_month(start: date, frequency_months: int, month_start: date, month_end: date) -> bool:
     return first_occurrence_in_month(start, frequency_months, month_start, month_end) is not None
+
+
+def parse_institution_frequency_months(frequency: str) -> int:
+    """
+    Z volného textu frekvence instituce dopočte interval v měsících (min. 1).
+    Preferuje první celé číslo v řetězci („3“, „3 měsíce“, „12 měs.“).
+    Bez čísla: čtvrtletně→3, pololetně→6, ročně→12, obecně „měsíc…“→1.
+    """
+    if not frequency or not str(frequency).strip():
+        return 1
+    s = re.sub(r'\s+', ' ', str(frequency).strip().lower())
+    m = re.search(r'(\d+)', s)
+    if m:
+        return max(1, int(m.group(1)))
+    if 'čtvrt' in s or 'kvart' in s:
+        return 3
+    if 'pololet' in s:
+        return 6
+    if 'roč' in s or 'rocn' in s or 'roční' in s:
+        return 12
+    if 'měs' in s or 'mes' in s:
+        return 1
+    return 1
+
+
+def count_occurrences_from_start_through(
+    start: date,
+    frequency_months: int,
+    through: date,
+) -> int:
+    """Počet termínů série od ``start`` (včetně) do ``through`` (včetně)."""
+    if frequency_months < 1:
+        frequency_months = 1
+    if start > through:
+        return 0
+    n = 0
+    k = 0
+    while k < 5000:
+        od = add_calendar_months(start, k * frequency_months)
+        if od > through:
+            break
+        n += 1
+        k += 1
+    return n
+
+
+def institution_expected_total_paid(
+    price,
+    frequency_text: str,
+    start_date: date | None,
+    end_date: date | None,
+    today: date,
+):
+    """
+    Celkem vyplaceno = cena × počet splátek od první platby (start) do min(dnes, konec).
+    Vrací None, pokud není vyplněný start — volající může použít součet transakcí.
+    """
+    if start_date is None:
+        return None
+    if price is None:
+        price = 0
+    fm = parse_institution_frequency_months(frequency_text or '')
+    period_end = today
+    if end_date is not None and end_date < period_end:
+        period_end = end_date
+    count = count_occurrences_from_start_through(start_date, fm, period_end)
+    return price * count
